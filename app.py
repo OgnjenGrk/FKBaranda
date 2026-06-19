@@ -1255,12 +1255,18 @@ elif page == "Листе":
     )
 
     ranking_cols = existing_columns(
-        filtered_players,
-        [PLAYER_COL, "Games Played", MINUTES_COL, selected_metric, "Goals", "Assists", "Points per Game"],
-    )
-    show_table(
-        filtered_players[ranking_cols].sort_values(selected_metric, ascending=False),
-    )
+    filtered_players,
+    [PLAYER_COL, "Games Played", MINUTES_COL, selected_metric, "Goals", "Assists", "Points per Game"],
+)
+
+# уклања дупликате
+ranking_cols = list(dict.fromkeys(ranking_cols))
+
+ranking_df = filtered_players[ranking_cols].copy()
+
+show_table(
+    ranking_df.sort_values(by=selected_metric, ascending=False)
+)
 
 
 elif page == "Голови":
