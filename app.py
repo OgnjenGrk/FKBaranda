@@ -16,11 +16,20 @@ st.set_page_config(
 )
 
 
-DATA_CANDIDATES = [
+TERMINI_DATA_CANDIDATES = [
+    Path(r"C:\Users\beoog\Desktop\Fudbal Bezanija\Sajt\Fudbal Bezanija Termini.xlsx"),
     Path("Fudbal Bezanija Termini.xlsx"),
     Path("Fudbal Bezanija Termini.csv"),
     Path("Fudbal Baranda Termini.xlsx"),
     Path("Fudbal Baranda Termini.csv"),
+]
+
+GOALS_DATA_CANDIDATES = [
+    Path(r"C:\Users\beoog\Desktop\Fudbal Bezanija\Sajt\Fudbal Bezanija Golovi.xlsx"),
+    Path("Fudbal Bezanija Golovi.xlsx"),
+    Path("Fudbal Bezanija Golovi.csv"),
+    Path("Fudbal Baranda Golovi.xlsx"),
+    Path("Fudbal Baranda Golovi.csv"),
 ]
 
 PLAYER_COL = "Player Name"
@@ -143,6 +152,40 @@ def format_number(value: float | int | None, decimals: int = 0) -> str:
     return f"{value:,.{decimals}f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 
+def parse_game_dates(values: pd.Series) -> pd.Series:
+    raw_values = values.astype(str).str.strip()
+    ymd_dates = pd.to_datetime(raw_values, format="%Y%m%d", errors="coerce")
+    generic_dates = pd.to_datetime(raw_values, errors="coerce", dayfirst=True)
+    return ymd_dates.fillna(generic_dates)
+
+
+def normalize_goal_method(value: object) -> str:
+    if pd.isna(value):
+        return "Непознато"
+
+    text = str(value).strip()
+    if not text:
+        return "Непознато"
+
+    lowered = text.lower()
+    if "right" in lowered:
+        return "Десна нога"
+    if "left" in lowered:
+        return "Лева нога"
+    if "header" in lowered or "head" in lowered:
+        return "Глава"
+    if "body" in lowered:
+        return "Тело"
+    if "own" in lowered:
+        return "Аутогол"
+
+    try:
+        float(text)
+    except ValueError:
+        return text
+    return "Непознато"
+
+
 @st.cache_data(show_spinner=False)
 def read_data(file_name: str, file_bytes: bytes) -> pd.DataFrame:
     suffix = Path(file_name).suffix.lower()
@@ -164,7 +207,7 @@ def read_data(file_name: str, file_bytes: bytes) -> pd.DataFrame:
         df[column] = pd.to_numeric(df[column], errors="coerce").fillna(0)
 
     if GAME_COL in df.columns:
-        parsed_dates = pd.to_datetime(df[GAME_COL], errors="coerce", dayfirst=True)
+        parsed_dates = parse_game_dates(df[GAME_COL])
         df["Game Label"] = df[GAME_COL].astype(str)
         df["Game Sort"] = parsed_dates.fillna(pd.Timestamp("1900-01-01"))
     else:
@@ -176,8 +219,50 @@ def read_data(file_name: str, file_bytes: bytes) -> pd.DataFrame:
     return df
 
 
-def load_default_file() -> tuple[str, bytes] | None:
-    for candidate in DATA_CANDIDATES:
+@st.cache_data(show_spinner=False)
+def read_goal_data(file_name: str, file_bytes: bytes) -> pd.DataFrame:
+    suffix = Path(file_name).suffix.lower()
+    buffer = io.BytesIO(file_bytes)
+
+    if suffix in [".xlsx", ".xls"]:
+        df = pd.read_excel(buffer)
+    elif suffix == ".csv":
+        df = pd.read_csv(buffer)
+    else:
+        raise ValueError("Подржани су Excel и CSV фајлови.")
+
+    df.columns = [str(column).strip() for column in df.columns]
+    if "Goalscorer" not in df.columns:
+        raise ValueError("Недостаје колона 'Goalscorer' у фајлу са головима.")
+
+    text_columns = ["Team", "Goalscorer", "Goalkeeper", "Assist", "Scored with"]
+    for column in existing_columns(df, text_columns):
+        df[column] = df[column].fillna("").astype(str).str.strip()
+
+    numeric_columns = existing_columns(
+        df,
+        ["No.", "Minute", "Black/Colored", "White/Bibs", "Goal Count"],
+    )
+    for column in numeric_columns:
+        df[column] = pd.to_numeric(df[column], errors="coerce")
+
+    if "Scored with" in df.columns:
+        df["Goal Method"] = df["Scored with"].apply(normalize_goal_method)
+
+    if GAME_COL in df.columns:
+        parsed_dates = parse_game_dates(df[GAME_COL])
+        df["Game Label"] = df[GAME_COL].astype(str)
+        df["Game Sort"] = parsed_dates.fillna(pd.Timestamp("1900-01-01"))
+    else:
+        df["Game Label"] = "Гол " + (df.index + 1).astype(str)
+        df["Game Sort"] = df.index
+
+    df = df[df["Goalscorer"].ne("")]
+    return df
+
+
+def load_default_file(candidates: list[Path]) -> tuple[str, bytes] | None:
+    for candidate in candidates:
         if candidate.exists():
             return candidate.name, candidate.read_bytes()
     return None
@@ -203,7 +288,7 @@ def build_player_stats(df: pd.DataFrame) -> pd.DataFrame:
     numeric_cols = [
         column
         for column in df.select_dtypes(include="number").columns
-        if column not in ["No.", "Game Sort"]
+        if column not in ["No.", GAME_COL, "Game Sort"]
     ]
 
     player_stats = df.groupby(PLAYER_COL, as_index=False)[numeric_cols].sum()
@@ -559,20 +644,388 @@ def show_table(
     st.markdown(f'<div class="fk-table-wrap">{html}</div>', unsafe_allow_html=True)
 
 
+def count_by_column(df: pd.DataFrame, column: str, value_name: str) -> pd.DataFrame:
+    if column not in df.columns:
+        return pd.DataFrame(columns=[column, value_name])
+
+    filtered = df[df[column].fillna("").astype(str).str.strip().ne("")]
+    if filtered.empty:
+        return pd.DataFrame(columns=[column, value_name])
+
+    return (
+        filtered.groupby(column)
+        .size()
+        .rename(value_name)
+        .reset_index()
+        .sort_values(value_name, ascending=False)
+    )
+
+
+def goal_count_bar(
+    data: pd.DataFrame,
+    name_col: str,
+    value_col: str,
+    title: str,
+    color: str,
+    top_n: int = 12,
+) -> go.Figure:
+    top = data.head(top_n).sort_values(value_col)
+    fig = px.bar(
+        top,
+        x=value_col,
+        y=name_col,
+        orientation="h",
+        text=value_col,
+        title=title,
+        color_discrete_sequence=[color],
+    )
+    fig.update_traces(textposition="outside", cliponaxis=False)
+    fig.update_layout(
+        height=max(360, 34 * len(top) + 120),
+        xaxis_title="",
+        yaxis_title="",
+        margin=dict(l=8, r=24, t=56, b=24),
+    )
+    return fig
+
+
+def goal_timeline_figure(goal_rows: pd.DataFrame) -> go.Figure:
+    plot_df = goal_rows.copy()
+    hover_cols = existing_columns(
+        plot_df,
+        ["Goalscorer", "Assist", "Goalkeeper", "Scored with", "Black/Colored", "White/Bibs"],
+    )
+
+    if "Minute" not in plot_df.columns or plot_df["Minute"].isna().all():
+        plot_df["Goal Order"] = range(1, len(plot_df) + 1)
+        x_col = "Goal Order"
+    else:
+        x_col = "Minute"
+
+    plot_df["Goal Marker Size"] = 12
+    fig = px.scatter(
+        plot_df.sort_values(x_col),
+        x=x_col,
+        y="Goalscorer",
+        color="Team" if "Team" in plot_df.columns else None,
+        symbol="Scored with" if "Scored with" in plot_df.columns else None,
+        size="Goal Marker Size",
+        hover_data=hover_cols,
+        title="Ток голова на термину",
+    )
+    fig.update_traces(marker=dict(opacity=0.85, line=dict(width=1)))
+    fig.update_layout(
+        height=max(420, 28 * plot_df["Goalscorer"].nunique() + 160),
+        xaxis_title="Минут" if x_col == "Minute" else "Редослед гола",
+        yaxis_title="Стрелац",
+        margin=dict(l=8, r=8, t=56, b=24),
+    )
+    return fig
+
+
+def goals_with_minutes(goals: pd.DataFrame) -> pd.DataFrame:
+    if "Minute" not in goals.columns:
+        return pd.DataFrame(columns=list(goals.columns) + ["Minute"])
+
+    minute_df = goals.copy()
+    minute_df["Minute"] = pd.to_numeric(minute_df["Minute"], errors="coerce")
+    return minute_df.dropna(subset=["Minute"])
+
+
+def minute_bins(max_minute: float, bin_size: int) -> list[int]:
+    safe_max = int(max(70, max_minute if pd.notna(max_minute) else 70))
+    upper = ((safe_max // bin_size) + 1) * bin_size
+    return list(range(0, upper + bin_size, bin_size))
+
+
+def add_minute_intervals(
+    goals: pd.DataFrame,
+    bin_size: int,
+    column_name: str = "Minute Interval",
+) -> pd.DataFrame:
+    minute_df = goals_with_minutes(goals)
+    if minute_df.empty:
+        minute_df[column_name] = pd.Series(dtype="category")
+        return minute_df
+
+    bins = minute_bins(minute_df["Minute"].max(), bin_size)
+    labels = [f"{start}-{end}" for start, end in zip(bins[:-1], bins[1:])]
+    minute_df[column_name] = pd.cut(
+        minute_df["Minute"],
+        bins=bins,
+        labels=labels,
+        right=False,
+        include_lowest=True,
+    )
+    return minute_df
+
+
+def minute_histogram_figure(goals: pd.DataFrame, bin_size: int) -> go.Figure:
+    minute_df = goals_with_minutes(goals)
+    bins = minute_bins(minute_df["Minute"].max(), bin_size)
+
+    fig = go.Figure()
+    fig.add_trace(
+        go.Histogram(
+            x=minute_df["Minute"],
+            xbins=dict(start=bins[0], end=bins[-1], size=bin_size),
+            marker_color="#4f46e5",
+            marker_line=dict(color="#111827", width=1),
+            opacity=0.82,
+        )
+    )
+    fig.update_layout(
+        title="Расподела постигнутих голова по минутима",
+        height=470,
+        bargap=0.04,
+        xaxis_title="Минут",
+        yaxis_title="Број голова",
+        margin=dict(l=8, r=8, t=56, b=24),
+    )
+    fig.update_xaxes(range=[0, bins[-1]], dtick=max(5, bin_size))
+    return fig
+
+
+def interval_donut_figure(goals: pd.DataFrame, bin_size: int = 10) -> tuple[go.Figure, pd.DataFrame]:
+    interval_df = add_minute_intervals(goals, bin_size)
+    counts = (
+        interval_df["Minute Interval"]
+        .value_counts(dropna=False)
+        .sort_index()
+        .rename("Голови")
+        .reset_index()
+        .rename(columns={"Minute Interval": "Интервал"})
+    )
+    counts = counts[counts["Голови"] > 0]
+
+    fig = px.pie(
+        counts,
+        names="Интервал",
+        values="Голови",
+        title="Расподела голова по интервалима",
+        hole=0.42,
+        color_discrete_sequence=px.colors.qualitative.Set2,
+    )
+    fig.update_layout(height=470, margin=dict(l=8, r=8, t=56, b=24))
+    return fig, counts
+
+
+def player_minute_heatmap_figure(
+    goals: pd.DataFrame,
+    min_goals: int,
+    bin_size: int,
+) -> tuple[go.Figure, pd.DataFrame]:
+    interval_df = add_minute_intervals(goals, bin_size, "Minute Bin")
+    scorer_counts = interval_df["Goalscorer"].value_counts()
+    selected_scorers = scorer_counts[scorer_counts >= min_goals].index
+    interval_df = interval_df[interval_df["Goalscorer"].isin(selected_scorers)]
+
+    if interval_df.empty:
+        return go.Figure(), pd.DataFrame()
+
+    heatmap = pd.crosstab(interval_df["Goalscorer"], interval_df["Minute Bin"])
+    heatmap = heatmap.loc[heatmap.sum(axis=1).sort_values(ascending=False).index]
+    fig = px.imshow(
+        heatmap,
+        text_auto=True,
+        color_continuous_scale="Inferno",
+        aspect="auto",
+        labels=dict(color="Голови"),
+        title="Кад који играч постиже голове",
+    )
+    fig.update_layout(
+        height=max(480, 32 * len(heatmap.index) + 150),
+        xaxis_title="Минут",
+        yaxis_title="Играч",
+        margin=dict(l=8, r=8, t=56, b=24),
+    )
+    return fig, heatmap.reset_index()
+
+
+def goalkeeper_minute_heatmap_figure(
+    goals: pd.DataFrame,
+    min_conceded: int,
+    bin_size: int,
+) -> tuple[go.Figure, pd.DataFrame]:
+    if "Goalkeeper" not in goals.columns:
+        return go.Figure(), pd.DataFrame()
+
+    interval_df = add_minute_intervals(goals, bin_size, "Minute Bin")
+    interval_df = interval_df[interval_df["Goalkeeper"].fillna("").astype(str).str.strip().ne("")]
+    goalkeeper_counts = interval_df["Goalkeeper"].value_counts()
+    selected_goalkeepers = goalkeeper_counts[goalkeeper_counts >= min_conceded].index
+    interval_df = interval_df[interval_df["Goalkeeper"].isin(selected_goalkeepers)]
+
+    if interval_df.empty:
+        return go.Figure(), pd.DataFrame()
+
+    heatmap = pd.crosstab(interval_df["Goalkeeper"], interval_df["Minute Bin"])
+    heatmap = heatmap.loc[heatmap.sum(axis=1).sort_values(ascending=False).index]
+    fig = px.imshow(
+        heatmap,
+        text_auto=True,
+        color_continuous_scale="Reds",
+        aspect="auto",
+        labels=dict(color="Примљени голови"),
+        title="Кад голмани примају голове",
+    )
+    fig.update_layout(
+        height=max(420, 32 * len(heatmap.index) + 150),
+        xaxis_title="Минут",
+        yaxis_title="Голман",
+        margin=dict(l=8, r=8, t=56, b=24),
+    )
+    return fig, heatmap.reset_index()
+
+
+def player_timing_summary(goals: pd.DataFrame) -> pd.DataFrame:
+    minute_df = goals_with_minutes(goals)
+    if minute_df.empty:
+        return pd.DataFrame()
+
+    grouped = minute_df.groupby("Goalscorer")["Minute"]
+    summary = grouped.agg(
+        Голови="count",
+        Просечан_минут="mean",
+        Медијана="median",
+        Најранији_гол="min",
+        Најкаснији_гол="max",
+    ).reset_index()
+
+    early = (
+        minute_df[minute_df["Minute"] < 10]
+        .groupby("Goalscorer")
+        .size()
+        .rename("Голови_0_10")
+        .reset_index()
+    )
+    late = (
+        minute_df[minute_df["Minute"] >= 50]
+        .groupby("Goalscorer")
+        .size()
+        .rename("Голови_50_plus")
+        .reset_index()
+    )
+
+    summary = summary.merge(early, on="Goalscorer", how="left").merge(late, on="Goalscorer", how="left")
+    summary[["Голови_0_10", "Голови_50_plus"]] = summary[["Голови_0_10", "Голови_50_plus"]].fillna(0)
+    for column in ["Просечан_минут", "Медијана"]:
+        summary[column] = summary[column].round(1)
+
+    return summary.sort_values(["Голови", "Просечан_минут"], ascending=[False, True])
+
+
+def assist_scorer_pairs(goals: pd.DataFrame) -> pd.DataFrame:
+    if not {"Assist", "Goalscorer"}.issubset(goals.columns):
+        return pd.DataFrame()
+
+    pairs = goals.copy()
+    pairs["Assist"] = pairs["Assist"].fillna("").astype(str).str.strip()
+    pairs = pairs[pairs["Assist"].ne("")]
+    if pairs.empty:
+        return pd.DataFrame()
+
+    pair_counts = (
+        pairs.groupby(["Assist", "Goalscorer"])
+        .size()
+        .rename("Голови")
+        .reset_index()
+        .sort_values("Голови", ascending=False)
+    )
+    pair_counts["Комбинација"] = pair_counts["Assist"] + " → " + pair_counts["Goalscorer"]
+    return pair_counts
+
+
+def assist_scorer_bar_figure(pairs: pd.DataFrame, top_n: int) -> go.Figure:
+    top = pairs.head(top_n).sort_values("Голови")
+    fig = px.bar(
+        top,
+        x="Голови",
+        y="Комбинација",
+        orientation="h",
+        text="Голови",
+        title="Најчешће комбинације асистент-стрелац",
+        color_discrete_sequence=["#0f766e"],
+    )
+    fig.update_traces(textposition="outside", cliponaxis=False)
+    fig.update_layout(
+        height=max(360, 34 * len(top) + 120),
+        xaxis_title="",
+        yaxis_title="",
+        margin=dict(l=8, r=24, t=56, b=24),
+    )
+    return fig
+
+
+def assist_scorer_sankey_figure(pairs: pd.DataFrame, top_n: int) -> go.Figure:
+    top = pairs.head(top_n)
+    assistants = [f"А: {name}" for name in top["Assist"]]
+    scorers = [f"С: {name}" for name in top["Goalscorer"]]
+    labels = list(dict.fromkeys(assistants + scorers))
+    label_index = {label: index for index, label in enumerate(labels)}
+
+    fig = go.Figure(
+        data=[
+            go.Sankey(
+                node=dict(
+                    pad=18,
+                    thickness=16,
+                    line=dict(color="rgba(17, 24, 39, 0.35)", width=0.5),
+                    label=labels,
+                    color="#dbeafe",
+                ),
+                link=dict(
+                    source=[label_index[f"А: {name}"] for name in top["Assist"]],
+                    target=[label_index[f"С: {name}"] for name in top["Goalscorer"]],
+                    value=top["Голови"].tolist(),
+                    color="rgba(15, 118, 110, 0.35)",
+                ),
+            )
+        ]
+    )
+    fig.update_layout(
+        title="Мрежа асистенција",
+        height=520,
+        margin=dict(l=8, r=8, t=56, b=24),
+        font_size=12,
+    )
+    return fig
+
+
 with st.sidebar:
     st.title("ФК Баранда")
-    uploaded_file = st.file_uploader("Excel или CSV са статистиком", type=["xlsx", "xls", "csv"])
+    uploaded_file = st.file_uploader(
+        "Фајл са статистиком термина",
+        type=["xlsx", "xls", "csv"],
+        key="termini_file",
+    )
+    uploaded_goals_file = st.file_uploader(
+        "Фајл са головима",
+        type=["xlsx", "xls", "csv"],
+        key="goals_file",
+    )
 
-    default_file = load_default_file()
+    default_file = load_default_file(TERMINI_DATA_CANDIDATES)
     if uploaded_file is not None:
         source_name = uploaded_file.name
         source_bytes = uploaded_file.getvalue()
     elif default_file is not None:
         source_name, source_bytes = default_file
-        st.caption(f"Учитан фајл: {source_name}")
+        st.caption(f"Учитана статистика: {source_name}")
     else:
         source_name = ""
         source_bytes = b""
+
+    default_goals_file = load_default_file(GOALS_DATA_CANDIDATES)
+    if uploaded_goals_file is not None:
+        goals_source_name = uploaded_goals_file.name
+        goals_source_bytes = uploaded_goals_file.getvalue()
+    elif default_goals_file is not None:
+        goals_source_name, goals_source_bytes = default_goals_file
+        st.caption(f"Учитани голови: {goals_source_name}")
+    else:
+        goals_source_name = ""
+        goals_source_bytes = b""
 
 
 if not source_bytes:
@@ -593,6 +1046,12 @@ except Exception as exc:
 
 df = add_accuracy_columns(df)
 player_stats = build_player_stats(df)
+goals_df = pd.DataFrame()
+if goals_source_bytes:
+    try:
+        goals_df = read_goal_data(goals_source_name, goals_source_bytes)
+    except Exception as exc:
+        st.sidebar.warning(f"Фајл са головима није учитан: {exc}")
 
 with st.sidebar:
     st.divider()
@@ -603,6 +1062,7 @@ with st.sidebar:
             "Профил играча",
             "Поређење играча",
             "Листе",
+            "Голови",
             "X-Y анализа",
             "Синергија",
             "Рекорди",
@@ -803,6 +1263,236 @@ elif page == "Листе":
     )
 
 
+elif page == "Голови":
+    st.title("Голови")
+
+    if goals_df.empty:
+        st.info(
+            "Фајл са головима није учитан. Локално се тражи "
+            "`C:\\Users\\beoog\\Desktop\\Fudbal Bezanija\\Sajt\\Fudbal Bezanija Golovi.xlsx`, "
+            "а на Streamlit Cloud-у фајл треба да буде у repo-у или upload-ован кроз sidebar."
+        )
+    else:
+        assisted_goals = 0
+        if "Assist" in goals_df.columns:
+            assisted_goals = goals_df["Assist"].fillna("").astype(str).str.strip().ne("").sum()
+
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Голова", format_number(len(goals_df)))
+        c2.metric("Термина", format_number(goals_df["Game Label"].nunique()))
+        c3.metric("Стрелаца", format_number(goals_df["Goalscorer"].nunique()))
+        c4.metric("Голова са асистенцијом", format_number(assisted_goals))
+
+        tab_scorers, tab_minutes, tab_player_minutes, tab_assists, tab_goalkeepers, tab_games = st.tabs(
+            ["Стрелци", "Минути", "Играч/минути", "Асистенције", "Голмани", "По термину"]
+        )
+
+        with tab_scorers:
+            scorer_counts = count_by_column(goals_df, "Goalscorer", "Голови")
+            if scorer_counts.empty:
+                st.info("Нема података о стрелцима.")
+            else:
+                st.plotly_chart(
+                    goal_count_bar(
+                        scorer_counts,
+                        "Goalscorer",
+                        "Голови",
+                        "Листа стрелаца из фајла голова",
+                        "#2f7d59",
+                    ),
+                    use_container_width=True,
+                )
+                show_table(scorer_counts)
+
+            if "Goal Method" in goals_df.columns:
+                scored_with = count_by_column(goals_df, "Goal Method", "Голови")
+                if not scored_with.empty:
+                    fig = px.pie(
+                        scored_with,
+                        names="Goal Method",
+                        values="Голови",
+                        title="Како су постизани голови",
+                        hole=0.35,
+                        color_discrete_sequence=px.colors.qualitative.Set2,
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
+
+        with tab_minutes:
+            minute_goals = goals_with_minutes(goals_df)
+            if minute_goals.empty:
+                st.info("Нема употребљивих минута у фајлу са головима.")
+            else:
+                bin_size = st.select_slider(
+                    "Ширина интервала за histogram",
+                    options=[1, 2, 5, 10],
+                    value=1,
+                    key="goal_hist_bin_size",
+                )
+                c1, c2 = st.columns([1.25, 0.75])
+                with c1:
+                    st.plotly_chart(
+                        minute_histogram_figure(minute_goals, bin_size),
+                        use_container_width=True,
+                    )
+                with c2:
+                    donut_fig, interval_counts = interval_donut_figure(minute_goals, 10)
+                    st.plotly_chart(donut_fig, use_container_width=True)
+                    show_table(interval_counts)
+
+        with tab_player_minutes:
+            minute_goals = goals_with_minutes(goals_df)
+            if minute_goals.empty:
+                st.info("Нема употребљивих минута у фајлу са головима.")
+            else:
+                c1, c2 = st.columns(2)
+                min_goal_options = list(range(1, max(2, int(minute_goals["Goalscorer"].value_counts().max())) + 1))
+                min_player_goals = c1.select_slider(
+                    "Минимум голова за heatmap",
+                    options=min_goal_options,
+                    value=4 if 4 in min_goal_options else min_goal_options[0],
+                    key="player_minute_min_goals",
+                )
+                player_bin_size = c2.select_slider(
+                    "Интервал минута",
+                    options=[5, 10, 15],
+                    value=5,
+                    key="player_minute_bin_size",
+                )
+                fig, heatmap_table = player_minute_heatmap_figure(
+                    minute_goals,
+                    min_player_goals,
+                    player_bin_size,
+                )
+                if fig.data:
+                    st.plotly_chart(fig, use_container_width=True)
+                    with st.expander("Табела heatmap података"):
+                        show_table(heatmap_table)
+                else:
+                    st.info("Нема играча који пролазе задати минимум голова.")
+
+                st.subheader("Timing профил стрелаца")
+                timing_summary = player_timing_summary(minute_goals)
+                if timing_summary.empty:
+                    st.info("Нема довољно података за timing профил.")
+                else:
+                    show_table(timing_summary)
+
+        with tab_assists:
+            assist_counts = count_by_column(goals_df, "Assist", "Асистенције")
+            if assist_counts.empty:
+                st.info("Нема уписаних асистенција у фајлу са головима.")
+            else:
+                st.plotly_chart(
+                    goal_count_bar(
+                        assist_counts,
+                        "Assist",
+                        "Асистенције",
+                        "Асистенти из фајла голова",
+                        "#536dfe",
+                    ),
+                    use_container_width=True,
+                )
+                show_table(assist_counts)
+
+                pairs = assist_scorer_pairs(goals_df)
+                if not pairs.empty:
+                    if len(pairs) <= 5:
+                        top_pairs = len(pairs)
+                    else:
+                        top_pairs = st.slider(
+                            "Број комбинација асистент-стрелац",
+                            5,
+                            min(30, len(pairs)),
+                            min(12, len(pairs)),
+                            key="assist_pair_top_n",
+                        )
+                    st.plotly_chart(
+                        assist_scorer_bar_figure(pairs, top_pairs),
+                        use_container_width=True,
+                    )
+                    st.plotly_chart(
+                        assist_scorer_sankey_figure(pairs, top_pairs),
+                        use_container_width=True,
+                    )
+                    show_table(pairs.head(top_pairs))
+
+        with tab_goalkeepers:
+            goalkeeper_counts = count_by_column(goals_df, "Goalkeeper", "Примљени голови")
+            if goalkeeper_counts.empty:
+                st.info("Нема података о голманима.")
+            else:
+                st.plotly_chart(
+                    goal_count_bar(
+                        goalkeeper_counts,
+                        "Goalkeeper",
+                        "Примљени голови",
+                        "Примљени голови по голману",
+                        "#d95f02",
+                    ),
+                    use_container_width=True,
+                )
+                show_table(goalkeeper_counts)
+
+                minute_goals = goals_with_minutes(goals_df)
+                if not minute_goals.empty:
+                    c1, c2 = st.columns(2)
+                    max_conceded = int(goalkeeper_counts["Примљени голови"].max())
+                    min_conceded = c1.slider(
+                        "Минимум примљених голова за heatmap",
+                        1,
+                        max(1, max_conceded),
+                        min(8, max(1, max_conceded)),
+                        key="goalkeeper_min_conceded",
+                    )
+                    gk_bin_size = c2.select_slider(
+                        "Интервал минута",
+                        options=[5, 10, 15],
+                        value=10,
+                        key="goalkeeper_bin_size",
+                    )
+                    fig, gk_heatmap = goalkeeper_minute_heatmap_figure(
+                        minute_goals,
+                        min_conceded,
+                        gk_bin_size,
+                    )
+                    if fig.data:
+                        st.plotly_chart(fig, use_container_width=True)
+                        with st.expander("Табела голманског heatmap-а"):
+                            show_table(gk_heatmap)
+
+        with tab_games:
+            game_options = (
+                goals_df[["Game Label", "Game Sort"]]
+                .drop_duplicates()
+                .sort_values("Game Sort")["Game Label"]
+                .tolist()
+            )
+            selected_game = st.selectbox("Изабери термин", game_options)
+            game_goals = goals_df[goals_df["Game Label"] == selected_game].sort_values(
+                "Minute" if "Minute" in goals_df.columns else "Game Sort"
+            )
+
+            if game_goals.empty:
+                st.info("Нема голова за изабрани термин.")
+            else:
+                st.plotly_chart(goal_timeline_figure(game_goals), use_container_width=True)
+                table_cols = existing_columns(
+                    game_goals,
+                    [
+                        "Minute",
+                        "Team",
+                        "Goalscorer",
+                        "Assist",
+                        "Goalkeeper",
+                        "Goal Method",
+                        "Black/Colored",
+                        "White/Bibs",
+                        "Goal Count",
+                    ],
+                )
+                show_table(game_goals[table_cols])
+
+
 elif page == "X-Y анализа":
     st.title("X-Y анализа")
 
@@ -909,7 +1599,7 @@ elif page == "Рекорди":
 
 elif page == "Подаци":
     st.title("Подаци")
-    tab_raw, tab_players = st.tabs(["Сви редови", "Агрегирано по играчу"])
+    tab_raw, tab_players, tab_goals = st.tabs(["Сви редови", "Агрегирано по играчу", "Голови"])
 
     with tab_raw:
         show_table(df, max_rows=500)
@@ -918,3 +1608,10 @@ elif page == "Подаци":
     with tab_players:
         show_table(player_stats, max_rows=500)
         download_table_button(player_stats, "Преузми табелу играча као CSV", "fk_baranda_igraci.csv")
+
+    with tab_goals:
+        if goals_df.empty:
+            st.info("Фајл са головима није учитан.")
+        else:
+            show_table(goals_df, max_rows=500)
+            download_table_button(goals_df, "Преузми голове као CSV", "fk_baranda_golovi.csv")
