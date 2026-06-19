@@ -202,6 +202,7 @@ PLAYER_NAME_OVERRIDES = {
     "Strahinja Milovanovic": "Страхиња Миловановић",
     "Vanijev Burazer": "Ванијев Буразер",
     "Viktor Joldzic": "Виктор Јолџић",
+    "Виктор Џолџић": "Виктор Јолџић",
     "~Viktor 2 (Bubanjin)": "~Виктор 2 (Бубањин)",
     "Right Foot": "Десна нога",
     "Left Foot": "Лева нога",
