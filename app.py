@@ -90,6 +90,36 @@ st.markdown(
         border: 1px solid rgba(49, 51, 63, 0.16);
         border-radius: 8px;
     }
+    .fk-table-wrap {
+        max-height: 560px;
+        overflow: auto;
+        border: 1px solid rgba(49, 51, 63, 0.16);
+        border-radius: 8px;
+    }
+    .fk-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.9rem;
+    }
+    .fk-table th {
+        position: sticky;
+        top: 0;
+        z-index: 1;
+        background: #f7f7f8;
+        color: #1f2937;
+        text-align: left;
+        border-bottom: 1px solid rgba(49, 51, 63, 0.2);
+        padding: 0.55rem 0.65rem;
+        white-space: nowrap;
+    }
+    .fk-table td {
+        border-bottom: 1px solid rgba(49, 51, 63, 0.1);
+        padding: 0.45rem 0.65rem;
+        white-space: nowrap;
+    }
+    .fk-table tr:nth-child(even) td {
+        background: #fafafa;
+    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -508,6 +538,27 @@ def download_table_button(df: pd.DataFrame, label: str, file_name: str) -> None:
     )
 
 
+def show_table(
+    data: pd.DataFrame,
+    max_rows: int = 250,
+    show_index: bool = False,
+) -> None:
+    display_df = data.copy()
+
+    if len(display_df) > max_rows:
+        st.caption(f"Приказано је првих {max_rows} редова од укупно {len(display_df)}.")
+        display_df = display_df.head(max_rows)
+
+    html = display_df.to_html(
+        index=show_index,
+        escape=True,
+        border=0,
+        classes="fk-table",
+        na_rep="-",
+    )
+    st.markdown(f'<div class="fk-table-wrap">{html}</div>', unsafe_allow_html=True)
+
+
 with st.sidebar:
     st.title("ФК Баранда")
     uploaded_file = st.file_uploader("Excel или CSV са статистиком", type=["xlsx", "xls", "csv"])
@@ -607,13 +658,11 @@ if page == "Преглед":
         ],
     )
     st.subheader("Табела играча")
-    st.dataframe(
+    show_table(
         filtered_players[table_cols].sort_values(
             "Goal Contributions" if "Goal Contributions" in table_cols else "Games Played",
             ascending=False,
-        ),
-        use_container_width=True,
-        hide_index=True,
+        )
     )
 
 
@@ -662,9 +711,9 @@ elif page == "Профил играча":
                 "Goals Conceded",
             ],
         )
-        st.dataframe(
+        show_table(
             player_stats[player_stats[PLAYER_COL] == player][profile_cols].T.rename(columns={row.name: "Вредност"}),
-            use_container_width=True,
+            show_index=True,
         )
 
     st.subheader("Учинак по термину")
@@ -692,7 +741,7 @@ elif page == "Профил играча":
         ],
     )
     player_matches = df[df[PLAYER_COL] == player].sort_values("Game Sort")
-    st.dataframe(player_matches[match_cols], use_container_width=True, hide_index=True)
+    show_table(player_matches[match_cols])
 
 
 elif page == "Поређење играча":
@@ -723,10 +772,8 @@ elif page == "Поређење играча":
             use_container_width=True,
         )
         table_cols = [PLAYER_COL, "Games Played"] + existing_columns(filtered_players, [MINUTES_COL]) + compare_metrics
-        st.dataframe(
+        show_table(
             filtered_players[filtered_players[PLAYER_COL].isin(selected_players)][table_cols],
-            use_container_width=True,
-            hide_index=True,
         )
 
 
@@ -751,10 +798,8 @@ elif page == "Листе":
         filtered_players,
         [PLAYER_COL, "Games Played", MINUTES_COL, selected_metric, "Goals", "Assists", "Points per Game"],
     )
-    st.dataframe(
+    show_table(
         filtered_players[ranking_cols].sort_values(selected_metric, ascending=False),
-        use_container_width=True,
-        hide_index=True,
     )
 
 
@@ -859,7 +904,7 @@ elif page == "Рекорди":
     if records.empty:
         st.info("Нема доступних рекорда за изабране статистике.")
     else:
-        st.dataframe(records, use_container_width=True, hide_index=True)
+        show_table(records)
 
 
 elif page == "Подаци":
@@ -867,9 +912,9 @@ elif page == "Подаци":
     tab_raw, tab_players = st.tabs(["Сви редови", "Агрегирано по играчу"])
 
     with tab_raw:
-        st.dataframe(df, use_container_width=True, hide_index=True)
+        show_table(df, max_rows=500)
         download_table_button(df, "Преузми све редове као CSV", "fk_baranda_svi_redovi.csv")
 
     with tab_players:
-        st.dataframe(player_stats, use_container_width=True, hide_index=True)
+        show_table(player_stats, max_rows=500)
         download_table_button(player_stats, "Преузми табелу играча као CSV", "fk_baranda_igraci.csv")
