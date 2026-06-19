@@ -8,6 +8,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
+import streamlit.components.v1 as components
 
 
 st.set_page_config(
@@ -61,6 +62,7 @@ CORE_STATS = [
 RADAR_STATS = [
     "Goals per 60",
     "Assists per 60",
+    "Goal Contributions per 60",
     "Big Chances Created per 60",
     "Shots on Goal per 60",
     "Successful passes per 60",
@@ -70,19 +72,187 @@ RADAR_STATS = [
 ]
 
 LEADERBOARD_OPTIONS = {
-    "Голови": "Goals",
-    "Асистенције": "Assists",
-    "Голови + асистенције": "Goal Contributions",
-    "Бодови по термину": "Points per Game",
-    "Шансе на 60 минута": "Big Chances Created per 60",
     "Голови на 60 минута": "Goals per 60",
     "Асистенције на 60 минута": "Assists per 60",
+    "Голови + асистенције на 60 минута": "Goal Contributions per 60",
+    "Велике шансе на 60 минута": "Big Chances Created per 60",
+    "Шутеви у оквир на 60 минута": "Shots on Goal per 60",
+    "Додавања на 60 минута": "Total Passes per 60",
+    "Успешна додавања на 60 минута": "Successful passes per 60",
+    "Дриблинзи на 60 минута": "Total Dribbles per 60",
+    "Успешни дриблинзи на 60 минута": "Successful dribbles per 60",
+    "Освојени дуели на 60 минута": "Tackles Won per 60",
+    "Пресечене лопте на 60 минута": "Interceptions per 60",
+    "Блокаде на 60 минута": "Blocks per 60",
+    "Одбране на 60 минута": "Saves per 60",
     "Прецизност паса": "Pass Accuracy",
     "Прецизност дриблинга": "Dribble Accuracy",
-    "Освојени дуели": "Tackles Won",
-    "Интерцепције": "Interceptions",
-    "Одбране": "Saves",
+    "Бодови по термину": "Points per Game",
+    "Укупно голова": "Goals",
+    "Укупно асистенција": "Assists",
 }
+
+DISPLAY_LABELS = {
+    "No.": "Бр.",
+    GAME_COL: "Датум",
+    "Game Label": "Термин",
+    "Game Sort": "Сортирање термина",
+    TEAM_COL: "Екипа",
+    PLAYER_COL: "Играч",
+    "Events": "Догађаји",
+    "Left F. Goals": "Голови левом ногом",
+    "Right F. Goals": "Голови десном ногом",
+    "Header Goals": "Голови главом",
+    "Body Goals": "Голови телом",
+    "Goals": "Голови",
+    "Assists": "Асистенције",
+    "Goal Contributions": "Голови + асистенције",
+    "Big Chances Created": "Велике шансе",
+    "Shots on Goal": "Шутеви у оквир",
+    "Hit Woodwork": "Погођен оквир гола",
+    "Shots off Goal": "Шутеви ван оквира",
+    "Blocked Shots": "Блокирани шутеви",
+    "Total Shots": "Укупно шутева",
+    "Blocks": "Блокаде",
+    "Successful passes": "Успешна додавања",
+    "Unsuccessful passes": "Неуспешна додавања",
+    "Total Passes": "Укупно додавања",
+    "Pass Accuracy": "Прецизност паса (%)",
+    "Successful dribbles": "Успешни дриблинзи",
+    "Unsuccessful dribbles": "Неуспешни дриблинзи",
+    "Total Dribbles": "Укупно дриблинга",
+    "Dribble Accuracy": "Прецизност дриблинга (%)",
+    "Tackles Won": "Освојени дуели",
+    "Interceptions": "Пресечене лопте",
+    "Fouls Against": "Фаулови над играчем",
+    "Fouls": "Направљени фаулови",
+    "Saves": "Одбране",
+    "Goals Conceded": "Примљени голови",
+    "Corners Taken": "Изведени корнери",
+    "Own Goals": "Аутоголови",
+    "Penalties Taken": "Изведени пенали",
+    "Penalties scored": "Постигнути пенали",
+    POINTS_COL: "Бодови",
+    MINUTES_COL: "Минути",
+    "Games Played": "Термини",
+    "Points per Game": "Бодови по термину",
+    "Goals per 60": "Голови на 60 мин",
+    "Assists per 60": "Асистенције на 60 мин",
+    "Goal Contributions per 60": "Голови + асистенције на 60 мин",
+    "Big Chances Created per 60": "Велике шансе на 60 мин",
+    "Shots on Goal per 60": "Шутеви у оквир на 60 мин",
+    "Total Shots per 60": "Шутеви на 60 мин",
+    "Successful passes per 60": "Успешна додавања на 60 мин",
+    "Total Passes per 60": "Додавања на 60 мин",
+    "Successful dribbles per 60": "Успешни дриблинзи на 60 мин",
+    "Total Dribbles per 60": "Дриблинзи на 60 мин",
+    "Tackles Won per 60": "Освојени дуели на 60 мин",
+    "Interceptions per 60": "Пресечене лопте на 60 мин",
+    "Blocks per 60": "Блокаде на 60 мин",
+    "Saves per 60": "Одбране на 60 мин",
+    "Goals Conceded per 60": "Примљени голови на 60 мин",
+    "Corners Taken per 60": "Изведени корнери на 60 мин",
+    "Hit Woodwork per 60": "Погођен оквир гола на 60 мин",
+    "Own Goals per 60": "Аутоголови на 60 мин",
+    "Goalscorer": "Стрелац",
+    "Goalkeeper": "Голман",
+    "Assist": "Асистент",
+    "Scored with": "Постигнуто",
+    "Goal Method": "Начин гола",
+    "Minute": "Минут",
+    "Black/Colored": "Црни/обојени",
+    "White/Bibs": "Бели/маркери",
+    "Goal Count": "Број голова",
+    "Goal Order": "Редослед гола",
+    "Minute Interval": "Интервал",
+    "Minute Bin": "Интервал",
+    "Просечан_минут": "Просечан минут",
+    "Најранији_гол": "Најранији гол",
+    "Најкаснији_гол": "Најкаснији гол",
+    "Голови_0_10": "Голови 0-10",
+    "Голови_50_plus": "Голови 50+",
+}
+
+PLAYER_NAME_OVERRIDES = {
+    "Drug Tegijev": "Друг Тегијев",
+    "Drug Tegijev Marko": "Друг Тегијев Марко",
+    "Dusan Bubanjin": "Душан Бубањин",
+    "Filip Lazovic": "Филип Лазовић",
+    "Ivan Apostolski": "Иван Апостолски",
+    "Ivan Filipovic": "Иван Филиповић",
+    "Lazar Petrovic": "Лазар Петровић",
+    "Luka Ilic": "Лука Илић",
+    "Luka Peric": "Лука Перић",
+    "Marko Radulovic": "Марко Радуловић",
+    "Marko Tegeltija": "Марко Тегелтија",
+    "Mihajlo Jovanovic": "Михајло Јовановић",
+    "Miljan Jovanovic": "Миљан Јовановић",
+    "Nenad": "Ненад",
+    "Nepoznat 1": "Непознат 1",
+    "Nepoznat 2": "Непознат 2",
+    "Nepoznat 3": "Непознат 3",
+    "Nikola Nikolic": "Никола Николић",
+    "Nikola Prtenjaca": "Никола Пртењача",
+    "Ognjen Bubanja": "Огњен Бубања",
+    "Ognjen Bubanja (golman)": "Огњен Бубања (голман)",
+    "Ognjen Grkinic": "Огњен Гркинић",
+    "Slobodan Sobat": "Слободан Шобат",
+    "Stefan Lazovic": "Стефан Лазовић",
+    "Stevan Lacmanovic": "Стеван Лаћмановић",
+    "Strahinja Milovanovic": "Страхиња Миловановић",
+    "Vanijev Burazer": "Ванијев Буразер",
+    "Viktor Joldzic": "Виктор Џолџић",
+    "~Viktor 2 (Bubanjin)": "~Виктор 2 (Бубањин)",
+    "Right Foot": "Десна нога",
+    "Left Foot": "Лева нога",
+    "Header": "Глава",
+    "Body": "Тело",
+}
+
+TEAM_LABELS = {
+    "Black": "Црни",
+    "Colored": "Обојени",
+    "White": "Бели",
+    "Bibs": "Маркери",
+}
+
+LATIN_DIGRAPHS = {
+    "dž": "џ",
+    "lj": "љ",
+    "nj": "њ",
+}
+
+LATIN_TO_CYRILLIC = {
+    "a": "а",
+    "b": "б",
+    "c": "ц",
+    "č": "ч",
+    "ć": "ћ",
+    "d": "д",
+    "đ": "ђ",
+    "e": "е",
+    "f": "ф",
+    "g": "г",
+    "h": "х",
+    "i": "и",
+    "j": "ј",
+    "k": "к",
+    "l": "л",
+    "m": "м",
+    "n": "н",
+    "o": "о",
+    "p": "п",
+    "r": "р",
+    "s": "с",
+    "š": "ш",
+    "t": "т",
+    "u": "у",
+    "v": "в",
+    "z": "з",
+    "ž": "ж",
+}
+
+CYRILLIC_CHARS = set("АБВГДЂЕЖЗИЈКЛЉМНЊОПРСТЋУФХЦЧЏШабвгдђежзијклљмнњопрстћуфхцчџш")
 
 
 st.markdown(
@@ -136,7 +306,13 @@ st.markdown(
 
 
 def existing_columns(df: pd.DataFrame, columns: list[str]) -> list[str]:
-    return [column for column in columns if column in df.columns]
+    existing = []
+    seen = set()
+    for column in columns:
+        if column in df.columns and column not in seen:
+            existing.append(column)
+            seen.add(column)
+    return existing
 
 
 def safe_div(numerator: pd.Series, denominator: pd.Series) -> pd.Series:
@@ -153,10 +329,131 @@ def format_number(value: float | int | None, decimals: int = 0) -> str:
 
 
 def parse_game_dates(values: pd.Series) -> pd.Series:
-    raw_values = values.astype(str).str.strip()
+    raw_values = values.astype(str).str.strip().str.replace(r"\.0$", "", regex=True)
     ymd_dates = pd.to_datetime(raw_values, format="%Y%m%d", errors="coerce")
-    generic_dates = pd.to_datetime(raw_values, errors="coerce", dayfirst=True)
+    generic_dates = pd.to_datetime(raw_values.where(ymd_dates.isna()), errors="coerce", dayfirst=True)
     return ymd_dates.fillna(generic_dates)
+
+
+def format_timestamp(value: pd.Timestamp) -> str:
+    return f"{value.day}. {value.month}. {value.year}."
+
+
+def format_date_value(value: object) -> str:
+    parsed = parse_game_dates(pd.Series([value])).iloc[0]
+    if pd.isna(parsed):
+        return str(value).strip()
+    return format_timestamp(parsed)
+
+
+def format_game_labels(values: pd.Series, fallback_prefix: str) -> pd.Series:
+    parsed_dates = parse_game_dates(values)
+    raw_labels = values.astype(str).str.strip().str.replace(r"\.0$", "", regex=True)
+    labels = [
+        format_timestamp(parsed) if pd.notna(parsed) else raw_label
+        for raw_label, parsed in zip(raw_labels, parsed_dates)
+    ]
+    fallback = fallback_prefix + " " + pd.Series(range(1, len(values) + 1), index=values.index).astype(str)
+    has_label = raw_labels.ne("") & raw_labels.str.lower().ne("nan")
+    return pd.Series(labels, index=values.index).where(has_label, fallback)
+
+
+def match_cyrillic_case(source: str, replacement: str) -> str:
+    if source.isupper():
+        return replacement.upper()
+    if source[:1].isupper():
+        return replacement.upper()
+    return replacement
+
+
+def serbian_latin_to_cyrillic(text: str) -> str:
+    result = []
+    index = 0
+    while index < len(text):
+        two_chars = text[index : index + 2]
+        digraph = LATIN_DIGRAPHS.get(two_chars.lower())
+        if digraph:
+            result.append(match_cyrillic_case(two_chars, digraph))
+            index += 2
+            continue
+
+        char = text[index]
+        replacement = LATIN_TO_CYRILLIC.get(char.lower())
+        result.append(match_cyrillic_case(char, replacement) if replacement else char)
+        index += 1
+    return "".join(result)
+
+
+def transliterate_person_name(value: object) -> str:
+    if pd.isna(value):
+        return ""
+
+    text = str(value).strip()
+    if not text:
+        return ""
+
+    if text in PLAYER_NAME_OVERRIDES:
+        return PLAYER_NAME_OVERRIDES[text]
+
+    if text.startswith("OG - "):
+        return "Аутогол - " + transliterate_person_name(text[5:])
+
+    if any(char in CYRILLIC_CHARS for char in text):
+        return text
+
+    return serbian_latin_to_cyrillic(text)
+
+
+def display_label(column: str) -> str:
+    if column in DISPLAY_LABELS:
+        return DISPLAY_LABELS[column]
+    if column.endswith(" per 60"):
+        base = column.removesuffix(" per 60")
+        return f"{display_label(base)} на 60 мин"
+    return column.replace("_", " ")
+
+
+def display_labels(columns: list[str]) -> dict[str, str]:
+    return {column: display_label(column) for column in columns}
+
+
+def localize_people_columns(df: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
+    df = df.copy()
+    for column in existing_columns(df, columns):
+        df[column] = df[column].apply(transliterate_person_name)
+    return df
+
+
+def localize_team_values(df: pd.DataFrame) -> pd.DataFrame:
+    if TEAM_COL not in df.columns:
+        return df
+
+    df = df.copy()
+    df[TEAM_COL] = df[TEAM_COL].apply(lambda value: TEAM_LABELS.get(str(value).strip(), str(value).strip()))
+    return df
+
+
+def prepare_display_table(data: pd.DataFrame, show_index: bool = False) -> pd.DataFrame:
+    display_df = data.copy()
+
+    for column in existing_columns(display_df, [PLAYER_COL, "Goalscorer", "Goalkeeper", "Assist"]):
+        display_df[column] = display_df[column].apply(transliterate_person_name)
+
+    if TEAM_COL in display_df.columns:
+        display_df[TEAM_COL] = display_df[TEAM_COL].apply(
+            lambda value: TEAM_LABELS.get(str(value).strip(), str(value).strip())
+        )
+
+    for column in existing_columns(display_df, [GAME_COL]):
+        display_df[column] = display_df[column].apply(format_date_value)
+
+    if "Scored with" in display_df.columns:
+        display_df["Scored with"] = display_df["Scored with"].apply(normalize_goal_method)
+
+    display_df = display_df.rename(columns=display_labels(list(display_df.columns)))
+    if show_index:
+        display_df.index = [display_label(str(index_value)) for index_value in display_df.index]
+    return display_df
 
 
 def normalize_goal_method(value: object) -> str:
@@ -200,7 +497,7 @@ def read_data(file_name: str, file_bytes: bytes) -> pd.DataFrame:
 
     df.columns = [str(column).strip() for column in df.columns]
     if PLAYER_COL not in df.columns:
-        raise ValueError(f"Недостаје колона '{PLAYER_COL}'.")
+        raise ValueError("Недостаје колона са именом играча.")
 
     numeric_candidates = existing_columns(df, CORE_STATS + [POINTS_COL, MINUTES_COL, "No."])
     for column in numeric_candidates:
@@ -208,7 +505,7 @@ def read_data(file_name: str, file_bytes: bytes) -> pd.DataFrame:
 
     if GAME_COL in df.columns:
         parsed_dates = parse_game_dates(df[GAME_COL])
-        df["Game Label"] = df[GAME_COL].astype(str)
+        df["Game Label"] = format_game_labels(df[GAME_COL], "Термин")
         df["Game Sort"] = parsed_dates.fillna(pd.Timestamp("1900-01-01"))
     else:
         df["Game Label"] = "Термин " + (df.index + 1).astype(str)
@@ -216,6 +513,8 @@ def read_data(file_name: str, file_bytes: bytes) -> pd.DataFrame:
 
     df[PLAYER_COL] = df[PLAYER_COL].astype(str).str.strip()
     df = df[df[PLAYER_COL].ne("")]
+    df = localize_people_columns(df, [PLAYER_COL])
+    df = localize_team_values(df)
     return df
 
 
@@ -233,7 +532,7 @@ def read_goal_data(file_name: str, file_bytes: bytes) -> pd.DataFrame:
 
     df.columns = [str(column).strip() for column in df.columns]
     if "Goalscorer" not in df.columns:
-        raise ValueError("Недостаје колона 'Goalscorer' у фајлу са головима.")
+        raise ValueError("Недостаје колона са стрелцем у фајлу са головима.")
 
     text_columns = ["Team", "Goalscorer", "Goalkeeper", "Assist", "Scored with"]
     for column in existing_columns(df, text_columns):
@@ -251,13 +550,15 @@ def read_goal_data(file_name: str, file_bytes: bytes) -> pd.DataFrame:
 
     if GAME_COL in df.columns:
         parsed_dates = parse_game_dates(df[GAME_COL])
-        df["Game Label"] = df[GAME_COL].astype(str)
+        df["Game Label"] = format_game_labels(df[GAME_COL], "Термин")
         df["Game Sort"] = parsed_dates.fillna(pd.Timestamp("1900-01-01"))
     else:
         df["Game Label"] = "Гол " + (df.index + 1).astype(str)
         df["Game Sort"] = df.index
 
     df = df[df["Goalscorer"].ne("")]
+    df = localize_people_columns(df, ["Goalscorer", "Goalkeeper", "Assist"])
+    df = localize_team_values(df)
     return df
 
 
@@ -321,6 +622,19 @@ def build_player_stats(df: pd.DataFrame) -> pd.DataFrame:
 
     if MINUTES_COL in player_stats.columns:
         minutes = player_stats[MINUTES_COL]
+        if "Goal Contributions" in player_stats.columns:
+            player_stats["Goal Contributions per 60"] = (
+                safe_div(player_stats["Goal Contributions"], minutes) * 60
+            ).round(2)
+        if "Total Passes" in player_stats.columns:
+            player_stats["Total Passes per 60"] = (
+                safe_div(player_stats["Total Passes"], minutes) * 60
+            ).round(2)
+        if "Total Dribbles" in player_stats.columns:
+            player_stats["Total Dribbles per 60"] = (
+                safe_div(player_stats["Total Dribbles"], minutes) * 60
+            ).round(2)
+
         per_60_candidates = existing_columns(player_stats, CORE_STATS)
         for column in per_60_candidates:
             if column not in ["Unsuccessful passes", "Unsuccessful dribbles"]:
@@ -328,7 +642,13 @@ def build_player_stats(df: pd.DataFrame) -> pd.DataFrame:
                     safe_div(player_stats[column], minutes) * 60
                 ).round(2)
 
-    sort_col = "Goal Contributions" if "Goal Contributions" in player_stats.columns else "Games Played"
+    sort_col = (
+        "Goal Contributions per 60"
+        if "Goal Contributions per 60" in player_stats.columns
+        else "Goal Contributions"
+        if "Goal Contributions" in player_stats.columns
+        else "Games Played"
+    )
     return player_stats.sort_values(sort_col, ascending=False).reset_index(drop=True)
 
 
@@ -376,6 +696,7 @@ def make_top_bar(
         orientation="h",
         text=metric,
         title=title,
+        labels=display_labels([PLAYER_COL, metric]),
         color_discrete_sequence=[color],
     )
     fig.update_traces(texttemplate="%{text:.2s}", textposition="outside", cliponaxis=False)
@@ -400,7 +721,7 @@ def percentile_radar(player_stats: pd.DataFrame, player: str, min_games: int, mi
     row = percentiles[percentiles[PLAYER_COL] == player].iloc[0]
 
     values = [row[column] for column in radar_cols]
-    labels = [column.replace(" per 60", "") for column in radar_cols]
+    labels = [display_label(column) for column in radar_cols]
 
     fig = go.Figure()
     fig.add_trace(
@@ -424,6 +745,7 @@ def percentile_radar(player_stats: pd.DataFrame, player: str, min_games: int, mi
 def comparison_chart(data: pd.DataFrame, players: list[str], metrics: list[str]) -> go.Figure:
     rows = data[data[PLAYER_COL].isin(players)][[PLAYER_COL] + metrics]
     long_df = rows.melt(id_vars=PLAYER_COL, var_name="Статистика", value_name="Вредност")
+    long_df["Статистика"] = long_df["Статистика"].map(display_label)
     fig = px.bar(
         long_df,
         x="Статистика",
@@ -431,6 +753,7 @@ def comparison_chart(data: pd.DataFrame, players: list[str], metrics: list[str])
         color=PLAYER_COL,
         barmode="group",
         text_auto=".2s",
+        labels={PLAYER_COL: "Играч"},
     )
     fig.update_layout(
         height=520,
@@ -533,7 +856,7 @@ def heatmap_figure(heatmap: pd.DataFrame, title: str, colorscale: str) -> go.Fig
         zmin=0,
         zmax=100,
         aspect="auto",
-        labels=dict(color="Win %"),
+        labels=dict(color="Победе %"),
         title=title,
     )
     fig.update_layout(
@@ -566,6 +889,7 @@ def quadrant_chart(
         color="Games Played",
         color_continuous_scale="Viridis",
         title=title,
+        labels=display_labels([PLAYER_COL, x_metric, y_metric, size_metric, "Games Played"]),
     )
     fig.update_traces(textposition="top center", marker=dict(opacity=0.78, line=dict(width=1)))
     fig.add_vline(x=x_mean, line_dash="dash", line_color="gray")
@@ -581,8 +905,8 @@ def quadrant_chart(
     fig.update_layout(
         height=640,
         margin=dict(l=8, r=8, t=56, b=24),
-        xaxis_title=x_metric,
-        yaxis_title=y_metric,
+        xaxis_title=display_label(x_metric),
+        yaxis_title=display_label(y_metric),
         coloraxis_colorbar_title="Термини",
     )
     return fig
@@ -602,7 +926,7 @@ def single_game_records(df: pd.DataFrame, stats: list[str]) -> pd.DataFrame:
         for _, row in record_rows.iterrows():
             rows.append(
                 {
-                    "Статистика": stat,
+                    "Статистика": display_label(stat),
                     "Играч": row[PLAYER_COL],
                     "Вредност": max_value,
                     "Термин": row.get("Game Label", ""),
@@ -613,7 +937,7 @@ def single_game_records(df: pd.DataFrame, stats: list[str]) -> pd.DataFrame:
 
 
 def download_table_button(df: pd.DataFrame, label: str, file_name: str) -> None:
-    csv = df.to_csv(index=False).encode("utf-8-sig")
+    csv = prepare_display_table(df).to_csv(index=False).encode("utf-8-sig")
     st.download_button(
         label=label,
         data=csv,
@@ -634,6 +958,10 @@ def show_table(
         st.caption(f"Приказано је првих {max_rows} редова од укупно {len(display_df)}.")
         display_df = display_df.head(max_rows)
 
+    display_df = prepare_display_table(display_df, show_index=show_index)
+    if show_index and display_df.index.name is None:
+        display_df.index.name = "Статистика"
+
     html = display_df.to_html(
         index=show_index,
         escape=True,
@@ -641,7 +969,145 @@ def show_table(
         classes="fk-table",
         na_rep="-",
     )
-    st.markdown(f'<div class="fk-table-wrap">{html}</div>', unsafe_allow_html=True)
+    table_height = min(590, max(150, 42 * (len(display_df) + 1)))
+    components.html(
+        f"""
+        <style>
+        body {{
+            margin: 0;
+            font-family: "Source Sans Pro", sans-serif;
+        }}
+        .fk-table-wrap {{
+            max-height: 560px;
+            overflow: auto;
+            border: 1px solid rgba(49, 51, 63, 0.16);
+            border-radius: 8px;
+        }}
+        .fk-table {{
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.9rem;
+        }}
+        .fk-table thead th {{
+            position: sticky;
+            top: 0;
+            z-index: 1;
+            background: #f7f7f8;
+            color: #1f2937;
+            text-align: left;
+            border-bottom: 1px solid rgba(49, 51, 63, 0.2);
+            padding: 0.55rem 0.65rem;
+            white-space: nowrap;
+        }}
+        .fk-table thead th.sortable {{
+            cursor: pointer;
+            user-select: none;
+        }}
+        .fk-table thead th.sortable:hover {{
+            background: #eceff3;
+        }}
+        .fk-table td,
+        .fk-table tbody th {{
+            border-bottom: 1px solid rgba(49, 51, 63, 0.1);
+            padding: 0.45rem 0.65rem;
+            white-space: nowrap;
+        }}
+        .fk-table tbody th {{
+            color: #1f2937;
+            font-weight: 600;
+            text-align: left;
+        }}
+        .fk-table tbody tr:nth-child(even) td,
+        .fk-table tbody tr:nth-child(even) th {{
+            background: #fafafa;
+        }}
+        .sort-arrows {{
+            margin-left: 0.35rem;
+            color: #6b7280;
+            font-size: 0.72rem;
+            letter-spacing: 0;
+        }}
+        .fk-table th.sorted-desc .sort-arrows,
+        .fk-table th.sorted-asc .sort-arrows {{
+            color: #111827;
+        }}
+        </style>
+        <div class="fk-table-wrap">{html}</div>
+        <script>
+        const table = document.querySelector(".fk-table");
+
+        function normalizeValue(text) {{
+            const value = text.trim();
+            if (!value || value === "-") {{
+                return {{ kind: "empty", value: "" }};
+            }}
+
+            const dateMatch = value.match(/^(\\d{{1,2}})\\.\\s*(\\d{{1,2}})\\.\\s*(\\d{{4}})\\.$/);
+            if (dateMatch) {{
+                const day = Number(dateMatch[1]);
+                const month = Number(dateMatch[2]) - 1;
+                const year = Number(dateMatch[3]);
+                return {{ kind: "number", value: new Date(year, month, day).getTime() }};
+            }}
+
+            const numberCandidate = value.replace(/\\./g, "").replace(",", ".");
+            if (/^-?\\d+(\\.\\d+)?$/.test(numberCandidate)) {{
+                return {{ kind: "number", value: Number(numberCandidate) }};
+            }}
+
+            return {{ kind: "text", value: value.toLocaleLowerCase("sr") }};
+        }}
+
+        function compareCells(a, b, direction) {{
+            const aValue = normalizeValue(a.textContent);
+            const bValue = normalizeValue(b.textContent);
+
+            if (aValue.kind === "empty" && bValue.kind !== "empty") return 1;
+            if (bValue.kind === "empty" && aValue.kind !== "empty") return -1;
+
+            let result = 0;
+            if (aValue.kind === "number" && bValue.kind === "number") {{
+                result = aValue.value - bValue.value;
+            }} else {{
+                result = String(aValue.value).localeCompare(String(bValue.value), "sr");
+            }}
+            return direction === "desc" ? -result : result;
+        }}
+
+        if (table) {{
+            const headers = Array.from(table.querySelectorAll("thead th"));
+            const body = table.querySelector("tbody");
+
+            headers.forEach((header, columnIndex) => {{
+                const label = header.textContent.trim() || "Статистика";
+                header.classList.add("sortable");
+                header.innerHTML = `<span>${{label}}</span><span class="sort-arrows">▲▼</span>`;
+                header.dataset.sortDirection = "";
+
+                header.addEventListener("click", () => {{
+                    const nextDirection = header.dataset.sortDirection === "desc" ? "asc" : "desc";
+                    headers.forEach((otherHeader) => {{
+                        otherHeader.dataset.sortDirection = "";
+                        otherHeader.classList.remove("sorted-desc", "sorted-asc");
+                    }});
+                    header.dataset.sortDirection = nextDirection;
+                    header.classList.add(nextDirection === "desc" ? "sorted-desc" : "sorted-asc");
+
+                    const rows = Array.from(body.querySelectorAll("tr"));
+                    rows.sort((rowA, rowB) => {{
+                        const cellA = rowA.children[columnIndex];
+                        const cellB = rowB.children[columnIndex];
+                        return compareCells(cellA, cellB, nextDirection);
+                    }});
+                    rows.forEach((row) => body.appendChild(row));
+                }});
+            }});
+        }}
+        </script>
+        """,
+        height=table_height,
+        scrolling=False,
+    )
 
 
 def count_by_column(df: pd.DataFrame, column: str, value_name: str) -> pd.DataFrame:
@@ -677,6 +1143,7 @@ def goal_count_bar(
         orientation="h",
         text=value_col,
         title=title,
+        labels=display_labels([name_col, value_col]),
         color_discrete_sequence=[color],
     )
     fig.update_traces(textposition="outside", cliponaxis=False)
@@ -691,9 +1158,10 @@ def goal_count_bar(
 
 def goal_timeline_figure(goal_rows: pd.DataFrame) -> go.Figure:
     plot_df = goal_rows.copy()
+    symbol_col = "Goal Method" if "Goal Method" in plot_df.columns else "Scored with" if "Scored with" in plot_df.columns else None
     hover_cols = existing_columns(
         plot_df,
-        ["Goalscorer", "Assist", "Goalkeeper", "Scored with", "Black/Colored", "White/Bibs"],
+        ["Goalscorer", "Assist", "Goalkeeper", "Goal Method", "Black/Colored", "White/Bibs"],
     )
 
     if "Minute" not in plot_df.columns or plot_df["Minute"].isna().all():
@@ -708,10 +1176,13 @@ def goal_timeline_figure(goal_rows: pd.DataFrame) -> go.Figure:
         x=x_col,
         y="Goalscorer",
         color="Team" if "Team" in plot_df.columns else None,
-        symbol="Scored with" if "Scored with" in plot_df.columns else None,
+        symbol=symbol_col,
         size="Goal Marker Size",
         hover_data=hover_cols,
         title="Ток голова на термину",
+        labels=display_labels(
+            ["Goalscorer", "Assist", "Goalkeeper", "Goal Method", "Team", x_col, "Goal Marker Size"]
+        ),
     )
     fig.update_traces(marker=dict(opacity=0.85, line=dict(width=1)))
     fig.update_layout(
@@ -994,35 +1465,17 @@ def assist_scorer_sankey_figure(pairs: pd.DataFrame, top_n: int) -> go.Figure:
 
 with st.sidebar:
     st.title("ФК Баранда")
-    uploaded_file = st.file_uploader(
-        "Фајл са статистиком термина",
-        type=["xlsx", "xls", "csv"],
-        key="termini_file",
-    )
-    uploaded_goals_file = st.file_uploader(
-        "Фајл са головима",
-        type=["xlsx", "xls", "csv"],
-        key="goals_file",
-    )
 
     default_file = load_default_file(TERMINI_DATA_CANDIDATES)
-    if uploaded_file is not None:
-        source_name = uploaded_file.name
-        source_bytes = uploaded_file.getvalue()
-    elif default_file is not None:
+    if default_file is not None:
         source_name, source_bytes = default_file
-        st.caption(f"Учитана статистика: {source_name}")
     else:
         source_name = ""
         source_bytes = b""
 
     default_goals_file = load_default_file(GOALS_DATA_CANDIDATES)
-    if uploaded_goals_file is not None:
-        goals_source_name = uploaded_goals_file.name
-        goals_source_bytes = uploaded_goals_file.getvalue()
-    elif default_goals_file is not None:
+    if default_goals_file is not None:
         goals_source_name, goals_source_bytes = default_goals_file
-        st.caption(f"Учитани голови: {goals_source_name}")
     else:
         goals_source_name = ""
         goals_source_bytes = b""
@@ -1031,7 +1484,7 @@ with st.sidebar:
 if not source_bytes:
     st.title("ФК Баранда статистика")
     st.info(
-        "Додај Excel или CSV фајл кроз sidebar, или постави "
+        "Није пронађен фајл са статистиком термина. Постави "
         "`Fudbal Bezanija Termini.xlsx` у исти фолдер као апликацију."
     )
     st.stop()
@@ -1063,7 +1516,7 @@ with st.sidebar:
             "Поређење играча",
             "Листе",
             "Голови",
-            "X-Y анализа",
+            "Анализа две осе",
             "Синергија",
             "Рекорди",
             "Подаци",
@@ -1092,14 +1545,33 @@ if page == "Преглед":
 
     st.subheader("Ко је носио игру")
     c1, c2 = st.columns(2)
-    if "Goal Contributions" in filtered_players.columns:
+    if "Goal Contributions per 60" in filtered_players.columns:
         c1.plotly_chart(
-            make_top_bar(filtered_players, "Goal Contributions", "Голови + асистенције"),
+            make_top_bar(filtered_players, "Goal Contributions per 60", "Голови + асистенције на 60 минута"),
             use_container_width=True,
         )
-    if "Points per Game" in filtered_players.columns:
+    elif "Goals per 60" in filtered_players.columns:
+        c1.plotly_chart(
+            make_top_bar(filtered_players, "Goals per 60", "Голови на 60 минута"),
+            use_container_width=True,
+        )
+
+    overview_second_metric = next(
+        (
+            metric
+            for metric in ["Interceptions per 60", "Total Passes per 60", "Successful passes per 60", "Tackles Won per 60", "Points per Game"]
+            if metric in filtered_players.columns
+        ),
+        None,
+    )
+    if overview_second_metric:
         c2.plotly_chart(
-            make_top_bar(filtered_players, "Points per Game", "Бодови по термину", color="#536dfe"),
+            make_top_bar(
+                filtered_players,
+                overview_second_metric,
+                display_label(overview_second_metric),
+                color="#536dfe",
+            ),
             use_container_width=True,
         )
 
@@ -1107,20 +1579,26 @@ if page == "Преглед":
         filtered_players,
         [
             PLAYER_COL,
-            "Games Played",
+            "Одиграно утакмица",
             MINUTES_COL,
-            "Goals",
-            "Assists",
-            "Goal Contributions",
+            "Goal Contributions per 60",
+            "Goals per 60",
+            "Assists per 60",
+            "Total Passes per 60",
+            "Successful passes per 60",
+            "Interceptions per 60",
+            "Tackles Won per 60",
             "Points per Game",
             "Pass Accuracy",
             "Dribble Accuracy",
+            "Goals",
+            "Assists",
         ],
     )
     st.subheader("Табела играча")
     show_table(
         filtered_players[table_cols].sort_values(
-            "Goal Contributions" if "Goal Contributions" in table_cols else "Games Played",
+            "Goal Contributions per 60" if "Goal Contributions per 60" in table_cols else "Games Played",
             ascending=False,
         )
     )
@@ -1132,11 +1610,17 @@ elif page == "Профил играча":
     row = player_stats[player_stats[PLAYER_COL] == player].iloc[0]
 
     c1, c2, c3, c4, c5 = st.columns(5)
-    if "Goals" in row.index:
+    if "Goals per 60" in row.index:
+        c1.metric("Голови/60", format_number(row["Goals per 60"], 2))
+    elif "Goals" in row.index:
         c1.metric("Голови", format_number(row["Goals"]))
-    if "Assists" in row.index:
+    if "Assists per 60" in row.index:
+        c2.metric("Асист./60", format_number(row["Assists per 60"], 2))
+    elif "Assists" in row.index:
         c2.metric("Асистенције", format_number(row["Assists"]))
-    if "Goal Contributions" in row.index:
+    if "Goal Contributions per 60" in row.index:
+        c3.metric("Г + А/60", format_number(row["Goal Contributions per 60"], 2))
+    elif "Goal Contributions" in row.index:
         c3.metric("Г + А", format_number(row["Goal Contributions"]))
     if "Points per Game" in row.index:
         c4.metric("Бодови/термин", format_number(row["Points per Game"], 2))
@@ -1144,12 +1628,12 @@ elif page == "Профил играча":
 
     c1, c2 = st.columns([1.05, 0.95])
     with c1:
-        st.subheader("Профил по percentile-у")
+        st.subheader("Профил по перцентилима")
         fig = percentile_radar(player_stats, player, min_games, min_minutes)
         if fig.data:
             st.plotly_chart(fig, use_container_width=True)
         else:
-            st.info("Нема довољно колона за radar приказ.")
+            st.info("Нема довољно колона за радарски приказ.")
 
     with c2:
         st.subheader("Кључне статистике")
@@ -1159,14 +1643,21 @@ elif page == "Профил играча":
                 PLAYER_COL,
                 "Games Played",
                 MINUTES_COL,
-                "Goals",
-                "Assists",
+                "Goal Contributions per 60",
+                "Goals per 60",
+                "Assists per 60",
+                "Big Chances Created per 60",
+                "Shots on Goal per 60",
+                "Total Passes per 60",
+                "Successful passes per 60",
+                "Interceptions per 60",
+                "Tackles Won per 60",
                 "Big Chances Created",
                 "Shots on Goal",
                 "Pass Accuracy",
                 "Dribble Accuracy",
-                "Tackles Won",
-                "Interceptions",
+                "Goals",
+                "Assists",
                 "Saves",
                 "Goals Conceded",
             ],
@@ -1215,13 +1706,23 @@ elif page == "Поређење играча":
         max_selections=4,
     )
 
+    compare_metric_options = existing_columns(filtered_players, list(LEADERBOARD_OPTIONS.values()))
     compare_metrics = st.multiselect(
         "Статистике за поређење",
-        existing_columns(filtered_players, list(LEADERBOARD_OPTIONS.values())),
+        compare_metric_options,
         default=existing_columns(
             filtered_players,
-            ["Goals", "Assists", "Big Chances Created per 60", "Pass Accuracy", "Tackles Won"],
+            [
+                "Goal Contributions per 60",
+                "Goals per 60",
+                "Assists per 60",
+                "Big Chances Created per 60",
+                "Total Passes per 60",
+                "Successful passes per 60",
+                "Interceptions per 60",
+            ],
         ),
+        format_func=display_label,
     )
 
     if len(selected_players) < 2 or not compare_metrics:
@@ -1247,7 +1748,9 @@ elif page == "Листе":
     }
     selected_label = st.selectbox("Статистика", list(available_options.keys()))
     selected_metric = available_options[selected_label]
-    top_n = st.slider("Број играча", 5, min(30, len(filtered_players)), min(10, len(filtered_players)))
+    top_limit = min(30, len(filtered_players))
+    top_min = min(5, top_limit)
+    top_n = st.slider("Број играча", top_min, top_limit, min(10, top_limit))
 
     st.plotly_chart(
         make_top_bar(filtered_players, selected_metric, selected_label, top_n=top_n),
@@ -1256,7 +1759,21 @@ elif page == "Листе":
 
     ranking_cols = existing_columns(
         filtered_players,
-        [PLAYER_COL, "Games Played", MINUTES_COL, selected_metric, "Goals", "Assists", "Points per Game"],
+        [
+            PLAYER_COL,
+            "Games Played",
+            MINUTES_COL,
+            selected_metric,
+            "Goal Contributions per 60",
+            "Goals per 60",
+            "Assists per 60",
+            "Total Passes per 60",
+            "Successful passes per 60",
+            "Interceptions per 60",
+            "Points per Game",
+            "Goals",
+            "Assists",
+        ],
     )
     show_table(
         filtered_players[ranking_cols].sort_values(selected_metric, ascending=False),
@@ -1268,9 +1785,9 @@ elif page == "Голови":
 
     if goals_df.empty:
         st.info(
-            "Фајл са головима није учитан. Локално се тражи "
+            "Фајл са головима није пронађен. Локално се тражи "
             "`C:\\Users\\beoog\\Desktop\\Fudbal Bezanija\\Sajt\\Fudbal Bezanija Golovi.xlsx`, "
-            "а на Streamlit Cloud-у фајл треба да буде у repo-у или upload-ован кроз sidebar."
+            "или `Fudbal Bezanija Golovi.xlsx` у истом фолдеру као апликација."
         )
     else:
         assisted_goals = 0
@@ -1313,6 +1830,7 @@ elif page == "Голови":
                         values="Голови",
                         title="Како су постизани голови",
                         hole=0.35,
+                        labels=display_labels(["Goal Method", "Голови"]),
                         color_discrete_sequence=px.colors.qualitative.Set2,
                     )
                     st.plotly_chart(fig, use_container_width=True)
@@ -1323,7 +1841,7 @@ elif page == "Голови":
                 st.info("Нема употребљивих минута у фајлу са головима.")
             else:
                 bin_size = st.select_slider(
-                    "Ширина интервала за histogram",
+                    "Ширина интервала за хистограм",
                     options=[1, 2, 5, 10],
                     value=1,
                     key="goal_hist_bin_size",
@@ -1347,7 +1865,7 @@ elif page == "Голови":
                 c1, c2 = st.columns(2)
                 min_goal_options = list(range(1, max(2, int(minute_goals["Goalscorer"].value_counts().max())) + 1))
                 min_player_goals = c1.select_slider(
-                    "Минимум голова за heatmap",
+                    "Минимум голова за топлотну мапу",
                     options=min_goal_options,
                     value=4 if 4 in min_goal_options else min_goal_options[0],
                     key="player_minute_min_goals",
@@ -1365,15 +1883,15 @@ elif page == "Голови":
                 )
                 if fig.data:
                     st.plotly_chart(fig, use_container_width=True)
-                    with st.expander("Табела heatmap података"):
+                    with st.expander("Табела података за топлотну мапу"):
                         show_table(heatmap_table)
                 else:
                     st.info("Нема играча који пролазе задати минимум голова.")
 
-                st.subheader("Timing профил стрелаца")
+                st.subheader("Профил стрелаца по минутима")
                 timing_summary = player_timing_summary(minute_goals)
                 if timing_summary.empty:
-                    st.info("Нема довољно података за timing профил.")
+                    st.info("Нема довољно података за профил по минутима.")
                 else:
                     show_table(timing_summary)
 
@@ -1438,7 +1956,7 @@ elif page == "Голови":
                     c1, c2 = st.columns(2)
                     max_conceded = int(goalkeeper_counts["Примљени голови"].max())
                     min_conceded = c1.slider(
-                        "Минимум примљених голова за heatmap",
+                        "Минимум примљених голова за топлотну мапу",
                         1,
                         max(1, max_conceded),
                         min(8, max(1, max_conceded)),
@@ -1457,7 +1975,7 @@ elif page == "Голови":
                     )
                     if fig.data:
                         st.plotly_chart(fig, use_container_width=True)
-                        with st.expander("Табела голманског heatmap-а"):
+                        with st.expander("Табела голманске топлотне мапе"):
                             show_table(gk_heatmap)
 
         with tab_games:
@@ -1493,8 +2011,8 @@ elif page == "Голови":
                 show_table(game_goals[table_cols])
 
 
-elif page == "X-Y анализа":
-    st.title("X-Y анализа")
+elif page == "Анализа две осе":
+    st.title("Анализа две осе")
 
     numeric_analysis_cols = [
         column
@@ -1502,7 +2020,13 @@ elif page == "X-Y анализа":
         if column not in ["No."]
     ]
 
-    default_x = "Pass Accuracy" if "Pass Accuracy" in numeric_analysis_cols else numeric_analysis_cols[0]
+    default_x = (
+        "Successful passes per 60"
+        if "Successful passes per 60" in numeric_analysis_cols
+        else "Pass Accuracy"
+        if "Pass Accuracy" in numeric_analysis_cols
+        else numeric_analysis_cols[0]
+    )
     default_y = (
         "Big Chances Created per 60"
         if "Big Chances Created per 60" in numeric_analysis_cols
@@ -1511,9 +2035,24 @@ elif page == "X-Y анализа":
     default_size = MINUTES_COL if MINUTES_COL in numeric_analysis_cols else "Games Played"
 
     c1, c2, c3 = st.columns(3)
-    x_metric = c1.selectbox("X оса", numeric_analysis_cols, index=numeric_analysis_cols.index(default_x))
-    y_metric = c2.selectbox("Y оса", numeric_analysis_cols, index=numeric_analysis_cols.index(default_y))
-    size_metric = c3.selectbox("Величина тачке", numeric_analysis_cols, index=numeric_analysis_cols.index(default_size))
+    x_metric = c1.selectbox(
+        "Водоравна оса",
+        numeric_analysis_cols,
+        index=numeric_analysis_cols.index(default_x),
+        format_func=display_label,
+    )
+    y_metric = c2.selectbox(
+        "Усправна оса",
+        numeric_analysis_cols,
+        index=numeric_analysis_cols.index(default_y),
+        format_func=display_label,
+    )
+    size_metric = c3.selectbox(
+        "Величина тачке",
+        numeric_analysis_cols,
+        index=numeric_analysis_cols.index(default_size),
+        format_func=display_label,
+    )
 
     st.plotly_chart(
         quadrant_chart(
@@ -1521,7 +2060,7 @@ elif page == "X-Y анализа":
             x_metric,
             y_metric,
             size_metric,
-            f"{x_metric} vs {y_metric}",
+            f"{display_label(x_metric)} и {display_label(y_metric)}",
         ),
         use_container_width=True,
     )
@@ -1533,7 +2072,7 @@ elif page == "Синергија":
     required = {GAME_COL, TEAM_COL, PLAYER_COL, POINTS_COL}
     missing = sorted(required.difference(df.columns))
     if missing:
-        st.info("За ову анализу недостају колоне: " + ", ".join(missing))
+        st.info("За ову анализу недостају колоне: " + ", ".join(display_label(column) for column in missing))
     else:
         min_pair_games = st.slider("Минимум заједничких термина", 1, 10, 3)
         tab_same, tab_opp = st.tabs(["Иста екипа", "Играч против играча"])
@@ -1588,6 +2127,7 @@ elif page == "Рекорди":
                 "Interceptions",
             ],
         ),
+        format_func=display_label,
     )
 
     records = single_game_records(df, record_stats)
