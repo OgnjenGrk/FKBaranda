@@ -135,6 +135,38 @@ hr {
     background: #1a1d24 !important;
     border: 1px solid rgba(255,255,255,0.07) !important;
 }
+/* Падајући менији (листа опција код selectbox/multiselect) — приказују се
+   у поп-овер слоју, па их CSS изнад не покрива. */
+div[data-baseweb="popover"],
+div[data-baseweb="popover"] div,
+ul[data-baseweb="menu"],
+ul[role="listbox"] {
+    background-color: #1a1d24 !important;
+}
+li[data-baseweb="menu-item"],
+li[role="option"],
+ul[data-baseweb="menu"] li {
+    background-color: #1a1d24 !important;
+    color: #f1f5f9 !important;
+}
+li[data-baseweb="menu-item"] *,
+li[role="option"] * {
+    color: #f1f5f9 !important;
+}
+li[data-baseweb="menu-item"]:hover,
+li[role="option"]:hover {
+    background-color: rgba(47,125,89,0.28) !important;
+    color: #f1f5f9 !important;
+}
+li[aria-selected="true"] {
+    background-color: rgba(47,125,89,0.4) !important;
+    color: #f1f5f9 !important;
+}
+/* Поље за претрагу унутар selectbox-а кад се откуца текст */
+div[data-baseweb="select"] input,
+div[data-baseweb="popover"] input {
+    color: #f1f5f9 !important;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -160,6 +192,13 @@ GAME_COL = "Date"
 TEAM_COL = "Team"
 POINTS_COL = "Points"
 MINUTES_COL = "Minutes Played"
+
+# Уклањамо дугмиће за зум из менија изнад графика — на телефону је лако
+# да их додирнеш случајно док скролујеш страницу.
+PLOTLY_CONFIG = {
+    "modeBarButtonsToRemove": ["zoom2d", "zoomIn2d", "zoomOut2d"],
+    "displaylogo": False,
+}
 
 CORE_STATS = [
     "Goals",
@@ -1078,6 +1117,155 @@ def single_game_records(df: pd.DataFrame, stats: list[str]) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+# ── ОЦЕНЕ ИГРАЧА (процена у стилу менаџерских игара) ───────────────────────
+# Ово није званична оцена — то је процена коју рачунамо искључиво на основу
+# статистике коју већ водимо у фајлу (голови, асистенције, дуели, додавања,
+# одбране...), по узору на оцене из Football Manager / WhoScored система.
+RATING_BASELINE = 6.0
+RATING_MIN = 3.0
+RATING_MAX = 10.0
+
+
+def compute_match_ratings(df: pd.DataFrame) -> pd.DataFrame:
+    """Рачуна процену оцене (1-10) за сваког играча у сваком термину."""
+    data = df.copy()
+    rating = pd.Series(RATING_BASELINE, index=data.index, dtype=float)
+
+    def col(name: str) -> pd.Series:
+        return data[name] if name in data.columns else pd.Series(0.0, index=data.index)
+
+    is_keeper = col("Saves") > 0
+
+    # Напад
+    rating = rating + col("Goals") * 0.9
+    rating = rating + col("Assists") * 0.6
+    rating = rating + col("Big Chances Created") * 0.25
+    rating = rating + col("Shots on Goal") * 0.06
+    rating = rating + col("Hit Woodwork") * 0.15
+    rating = rating + col("Corners Taken") * 0.03
+
+    # Додавања — награда/казна на основу прецизности, не по комаду, да не
+    # фаворизује играче који су само много додавали лопту
+    if {"Successful passes", "Unsuccessful passes"}.issubset(data.columns):
+        total_passes = data["Successful passes"] + data["Unsuccessful passes"]
+        pass_accuracy = safe_div(data["Successful passes"], total_passes) * 100
+        volume_factor = (total_passes.clip(upper=20) / 20).fillna(0.0)
+        rating = rating + ((pass_accuracy.fillna(75) - 75) / 10 * 0.3) * volume_factor
+
+    # Дриблинг
+    rating = rating + col("Successful dribbles") * 0.08
+    rating = rating - col("Unsuccessful dribbles") * 0.05
+
+    # Одбрана (важи за све играче, не само за дефанзивце)
+    rating = rating + col("Tackles Won") * 0.12
+    rating = rating + col("Interceptions") * 0.1
+    rating = rating + col("Blocks") * 0.12
+
+    # Голманске статистике — рачунају се само за термине у којима је играч
+    # очигледно био на голу (имао бар једну одбрану у том термину)
+    rating = rating + (col("Saves") * 0.25).where(is_keeper, 0.0)
+    rating = rating - (col("Goals Conceded") * 0.35).where(is_keeper, 0.0)
+
+    # Тежак малус за аутогол
+    rating = rating - col("Own Goals") * 1.5
+
+    # Мали бонус/малус на основу резултата термина (победа/нерешено/пораз)
+    if POINTS_COL in data.columns:
+        points_int = data[POINTS_COL].round().astype("Int64")
+        result_bonus = points_int.map({3: 0.3, 1: 0.0, 0: -0.2}).astype("float64").fillna(0.0)
+        rating = rating + result_bonus
+
+    rating = rating.clip(lower=RATING_MIN, upper=RATING_MAX).round(1)
+
+    result_cols = existing_columns(
+        data, [PLAYER_COL, "Game Label", "Game Sort", TEAM_COL, POINTS_COL, MINUTES_COL]
+    )
+    result = data[result_cols].copy()
+    result["Оцена"] = rating
+    result["Голман"] = is_keeper
+    return result
+
+
+def build_player_ratings(df: pd.DataFrame, player_stats: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Враћа (оцене по терминима, агрегирани преглед по играчу)."""
+    match_ratings = compute_match_ratings(df)
+
+    summary = (
+        match_ratings.groupby(PLAYER_COL)["Оцена"]
+        .agg(**{
+            "Просечна оцена": "mean",
+            "Најбоља оцена": "max",
+            "Најслабија оцена": "min",
+            "Партије": "count",
+        })
+        .reset_index()
+    )
+    summary["Просечна оцена"] = summary["Просечна оцена"].round(2)
+
+    excellent = (
+        match_ratings[match_ratings["Оцена"] >= 7.5]
+        .groupby(PLAYER_COL)
+        .size()
+        .rename("Партије 7.5+")
+        .reset_index()
+    )
+    summary = summary.merge(excellent, on=PLAYER_COL, how="left")
+    summary["Партије 7.5+"] = summary["Партије 7.5+"].fillna(0).astype(int)
+
+    extra_cols = existing_columns(player_stats, ["Games Played", MINUTES_COL])
+    if extra_cols:
+        summary = summary.merge(player_stats[[PLAYER_COL] + extra_cols], on=PLAYER_COL, how="left")
+
+    return match_ratings, summary.sort_values("Просечна оцена", ascending=False).reset_index(drop=True)
+
+
+def rating_color(value: float) -> str:
+    if value >= 7.5:
+        return "#4ade80"
+    if value >= 6.0:
+        return "#fbbf24"
+    return "#f87171"
+
+
+def rating_trend_figure(player_matches: pd.DataFrame, player: str) -> go.Figure:
+    pm = player_matches.sort_values("Game Sort")
+    avg = pm["Оцена"].mean()
+    colors = [rating_color(v) for v in pm["Оцена"]]
+
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=pm["Game Label"],
+            y=pm["Оцена"],
+            mode="lines+markers+text",
+            text=[f"{v:.1f}" for v in pm["Оцена"]],
+            textposition="top center",
+            line=dict(color="#2f7d59", width=2),
+            marker=dict(size=11, color=colors, line=dict(width=1.5, color="#0e1117")),
+            name=player,
+        )
+    )
+    fig.add_hline(
+        y=avg,
+        line_dash="dash",
+        line_color="#9ca3af",
+        annotation_text=f"Просек: {avg:.2f}",
+        annotation_position="top left",
+        annotation_font_color="#9ca3af",
+    )
+    fig.update_layout(
+        paper_bgcolor="#0e1117",
+        plot_bgcolor="#1a1d24",
+        font=dict(color="#e8eaed"),
+        height=380,
+        yaxis=dict(title="Оцена", range=[2.5, 10.2]),
+        xaxis_title="",
+        margin=dict(l=8, r=8, t=24, b=24),
+        showlegend=False,
+    )
+    return fig
+
+
 def download_table_button(df: pd.DataFrame, label: str, file_name: str) -> None:
     csv = prepare_display_table(df).to_csv(index=False).encode("utf-8-sig")
     st.download_button(
@@ -1730,6 +1918,7 @@ with st.sidebar:
             "🤝 Хемија",
             "📈 Трендови",
             "🥇 Награде",
+            "⭐ Оцене",
             "📊 Историја термина",
         ],
     )
@@ -1867,7 +2056,7 @@ if page == "🏆 Почетна":
                 xaxis_title="",
                 yaxis_title="Индекс форме (0-100)",
             )
-            st.plotly_chart(fig_form, use_container_width=True)
+            st.plotly_chart(fig_form, use_container_width=True, config=PLOTLY_CONFIG)
 
     st.divider()
 
@@ -1878,11 +2067,13 @@ if page == "🏆 Почетна":
         c1.plotly_chart(
             make_top_bar(filtered_players, "Goal Contributions per 60", "Голови + асистенције на 60 минута"),
             use_container_width=True,
+            config=PLOTLY_CONFIG,
         )
     if "Interceptions per 60" in filtered_players.columns:
         c2.plotly_chart(
             make_top_bar(filtered_players, "Interceptions per 60", "Пресечене лопте на 60 минута", color="#536dfe"),
             use_container_width=True,
+            config=PLOTLY_CONFIG,
         )
 
     st.divider()
@@ -1947,7 +2138,7 @@ elif page == "👤 Играчи":
         st.subheader("Профил по перцентилима")
         fig = percentile_radar(player_stats, player, min_games, min_minutes)
         if fig.data:
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, use_container_width=True, config=PLOTLY_CONFIG)
         else:
             st.info("Нема довољно колона за радарски приказ.")
 
@@ -2021,7 +2212,7 @@ elif page == "👤 Играчи":
             margin=dict(l=8, r=8, t=48, b=24),
             xaxis_title="",
         )
-        st.plotly_chart(fig_progress, use_container_width=True)
+        st.plotly_chart(fig_progress, use_container_width=True, config=PLOTLY_CONFIG)
 
     st.divider()
 
@@ -2085,6 +2276,7 @@ elif page == "👤 Играчи":
         st.plotly_chart(
             comparison_chart(filtered_players, selected_players, compare_metrics),
             use_container_width=True,
+            config=PLOTLY_CONFIG,
         )
         table_cols = [PLAYER_COL, "Games Played"] + existing_columns(filtered_players, [MINUTES_COL]) + compare_metrics
         show_table(
@@ -2165,7 +2357,7 @@ elif page == "🤝 Хемија":
                     xaxis_title="", yaxis_title="",
                     margin=dict(l=8, r=8, t=56, b=24),
                 )
-                st.plotly_chart(fig_h, use_container_width=True)
+                st.plotly_chart(fig_h, use_container_width=True, config=PLOTLY_CONFIG)
 
         with tab_opp:
             opp_heatmap, opp_games_matrix = build_opponent_heatmap(df, min_pair_games)
@@ -2196,7 +2388,7 @@ elif page == "🤝 Хемија":
                     xaxis_title="", yaxis_title="",
                     margin=dict(l=8, r=8, t=56, b=24),
                 )
-                st.plotly_chart(fig_opp, use_container_width=True)
+                st.plotly_chart(fig_opp, use_container_width=True, config=PLOTLY_CONFIG)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -2252,7 +2444,7 @@ elif page == "📈 Трендови":
                 height=380, xaxis_title="", margin=dict(l=8, r=8, t=48, b=24),
                 yaxis_title=display_label(trend_metric) if trend_metric else "",
             )
-            st.plotly_chart(fig_trend, use_container_width=True)
+            st.plotly_chart(fig_trend, use_container_width=True, config=PLOTLY_CONFIG)
 
     st.divider()
 
@@ -2275,7 +2467,7 @@ elif page == "📈 Трендови":
             plot_bgcolor='#1a1d24',
             font=dict(color='#e8eaed'),
         )
-        st.plotly_chart(fig_monthly, use_container_width=True)
+        st.plotly_chart(fig_monthly, use_container_width=True, config=PLOTLY_CONFIG)
 
         st.divider()
 
@@ -2298,6 +2490,7 @@ elif page == "📈 Трендови":
         st.plotly_chart(
             quadrant_chart(filtered_players, x_metric, y_metric, size_metric, f"{display_label(x_metric)} и {display_label(y_metric)}"),
             use_container_width=True,
+            config=PLOTLY_CONFIG,
         )
 
 
@@ -2403,6 +2596,119 @@ elif page == "🥇 Награде":
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# ⭐ ОЦЕНЕ
+# ═══════════════════════════════════════════════════════════════════════════════
+elif page == "⭐ Оцене":
+    st.title("Оцене играча")
+    st.caption(
+        "Процена оцене сваке партије (1–10), по узору на оцене из менаџерских "
+        "игара. Ово НИЈЕ званична оцена — рачуна се аутоматски, искључиво на "
+        "основу статистике коју већ водимо (голови, асистенције, дуели, "
+        "додавања, одбране...)."
+    )
+
+    with st.expander("Како се рачуна оцена?"):
+        st.markdown(
+            """
+Свака партија почиње од **базне оцене 6.0**, па се додаје или одузима на
+основу учинка у том термину:
+
+- ⚽ Гол **+0.9** · 🎯 асистенција **+0.6** · створена шанса **+0.25**
+- Шут у оквир **+0.06** · погођен оквир гола **+0.15** · корнер **+0.03**
+- Прецизност додавања изнад/испод 75% доноси бонус/малус, сразмерно броју додавања
+- Успешан дриблинг **+0.08** · неуспешан дриблинг **−0.05**
+- Освојен дуел **+0.12** · пресечена лопта **+0.1** · блокада **+0.12**
+- За термине у којима је играч очигледно био на голу (имао одбрану): одбрана **+0.25**, примљен гол **−0.35**
+- Аутогол **−1.5**
+- Мали бонус за победу екипе (**+0.3**) / мали малус за пораз (**−0.2**)
+
+Коначна оцена се ограничава на распон **3.0–10.0**. Ово је процена коју можемо
+даље подешавати — слободно реци ако нека статистика треба да носи већу или
+мању тежину.
+            """
+        )
+
+    match_ratings, ratings_summary = build_player_ratings(df, player_stats)
+    ratings_view = ratings_summary[
+        ratings_summary[PLAYER_COL].isin(filtered_players[PLAYER_COL])
+    ].reset_index(drop=True)
+
+    if ratings_view.empty:
+        st.warning("Нема играча који пролазе тренутне филтере.")
+    else:
+        st.subheader("Топ 3 — просечна оцена сезоне")
+
+        def rating_card(rank_emoji: str, name: str, value: float, games: int) -> None:
+            color = rating_color(value)
+            st.markdown(
+                f"""
+                <div style='background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);
+                            border-radius:12px;padding:1.1rem 1.3rem;margin-bottom:0.8rem;
+                            display:flex;align-items:center;justify-content:space-between;'>
+                    <div>
+                        <div style='font-size:1.3rem;margin-bottom:0.15rem'>{rank_emoji} {name}</div>
+                        <div style='font-size:0.8rem;color:#9ca3af'>{games} партија</div>
+                    </div>
+                    <div style='font-size:1.8rem;font-weight:800;color:{color};'>{value:.2f}</div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+        for emoji, (_, row) in zip(["🥇", "🥈", "🥉"], ratings_view.head(3).iterrows()):
+            rating_card(emoji, row[PLAYER_COL], row["Просечна оцена"], int(row["Партије"]))
+
+        st.divider()
+
+        st.subheader("Листа свих играча")
+        leaderboard_cols = existing_columns(
+            ratings_view,
+            [
+                PLAYER_COL,
+                "Просечна оцена",
+                "Најбоља оцена",
+                "Најслабија оцена",
+                "Партије 7.5+",
+                "Партије",
+                MINUTES_COL,
+            ],
+        )
+        show_table(ratings_view[leaderboard_cols])
+
+        st.divider()
+
+        # ── Појединачни играч ────────────────────────────────────────────────
+        st.subheader("Оцене по терминима за играча")
+        rating_player = st.selectbox(
+            "Изабери играча",
+            sorted(ratings_view[PLAYER_COL].unique()),
+            key="rating_player_select",
+        )
+        player_row = ratings_view[ratings_view[PLAYER_COL] == rating_player].iloc[0]
+        player_matches = match_ratings[match_ratings[PLAYER_COL] == rating_player]
+
+        rc1, rc2, rc3, rc4 = st.columns(4)
+        rc1.metric("Просечна оцена", format_number(player_row["Просечна оцена"], 2))
+        rc2.metric("Најбоља оцена", format_number(player_row["Најбоља оцена"], 1))
+        rc3.metric("Најслабија оцена", format_number(player_row["Најслабија оцена"], 1))
+        rc4.metric("Партије 7.5+", format_number(player_row["Партије 7.5+"]))
+
+        st.plotly_chart(
+            rating_trend_figure(player_matches, rating_player),
+            use_container_width=True,
+            config=PLOTLY_CONFIG,
+        )
+
+        match_table_cols = existing_columns(
+            player_matches, ["Game Label", TEAM_COL, POINTS_COL, MINUTES_COL, "Оцена", "Голман"]
+        )
+        match_table = player_matches.sort_values("Game Sort", ascending=False)[match_table_cols].copy()
+        if "Голман" in match_table.columns:
+            match_table["Голман"] = match_table["Голман"].map({True: "Да", False: "Не"})
+        show_table(match_table)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # 📊 ИСТОРИЈА ТЕРМИНА
 # ═══════════════════════════════════════════════════════════════════════════════
 elif page == "📊 Историја термина":
@@ -2469,7 +2775,7 @@ elif page == "📊 Историја термина":
         if not game_goals.empty:
             st.divider()
             st.subheader("Голови у термину")
-            st.plotly_chart(goal_timeline_figure(game_goals), use_container_width=True)
+            st.plotly_chart(goal_timeline_figure(game_goals), use_container_width=True, config=PLOTLY_CONFIG)
             goal_table_cols = existing_columns(
                 game_goals,
                 ["Minute", "Team", "Goalscorer", "Assist", "Goalkeeper", "Goal Method", "Black/Colored", "White/Bibs", "Goal Count"],
