@@ -17,6 +17,31 @@ st.set_page_config(
     layout="wide",
 )
 
+# Streamlit-ова уграђена опција "Select all" у multiselect падајућим менијима
+# нема Python параметар за превод, па се текст мења преко малог JS "хака"
+# који прати DOM и замењује сваки "Select all (...)" натпис на српски.
+components.html(
+    """
+    <script>
+    const translateSelectAll = () => {
+        const doc = window.parent.document;
+        doc.querySelectorAll("li, div, span").forEach((el) => {
+            if (el.childNodes.length === 1 && el.childNodes[0].nodeType === 3) {
+                const txt = el.textContent;
+                if (/^Select all\\b/i.test(txt.trim())) {
+                    el.textContent = txt.replace(/^Select all/i, "Изабери све");
+                }
+            }
+        });
+    };
+    const observer = new MutationObserver(translateSelectAll);
+    observer.observe(window.parent.document.body, { childList: true, subtree: true });
+    translateSelectAll();
+    </script>
+    """,
+    height=0,
+)
+
 # Тамна тема преко CSS инјекције
 st.markdown("""
 <style>
@@ -2644,7 +2669,7 @@ elif page == "📈 Трендови":
     st.subheader("Анализа две осе")
     numeric_analysis_cols = [
         c for c in filtered_players.select_dtypes(include="number").columns
-        if c not in ["No."]
+        if c not in ["No.", "Players"] and not c.startswith("Unnamed")
     ]
     if len(numeric_analysis_cols) >= 2:
         default_x = next((m for m in ["Pass Accuracy", "Successful passes per 60"] if m in numeric_analysis_cols), numeric_analysis_cols[0])
