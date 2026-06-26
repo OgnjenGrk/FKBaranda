@@ -910,7 +910,7 @@ def percentile_radar(player_stats: pd.DataFrame, player: str, min_games: int, mi
     row = percentiles[percentiles[PLAYER_COL] == player].iloc[0]
 
     values = [row[column] for column in radar_cols]
-    labels = [display_label(column) for column in radar_cols]
+    labels = [display_label(column).removesuffix(" на 60 мин") for column in radar_cols]
 
     fig = go.Figure()
     fig.add_trace(
@@ -2150,7 +2150,11 @@ if page == "🏆 Почетна":
 elif page == "👤 Играчи":
     st.title("Профили играча")
 
-    player = st.selectbox("Изабери играча", sorted(filtered_players[PLAYER_COL].unique()))
+    player = st.selectbox(
+        "Изабери играча",
+        sorted(filtered_players[PLAYER_COL].unique()),
+        key="player_profile_select",
+    )
     row = player_stats[player_stats[PLAYER_COL] == player].iloc[0]
 
     # ── Картица играча ────────────────────────────────────────────────────────
