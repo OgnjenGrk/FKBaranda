@@ -900,15 +900,100 @@ def player_stat_rank(
 
 
 def metric_card_grid(player_stats: pd.DataFrame, raw_df: pd.DataFrame) -> None:
-    c1, c2, c3, c4, c5 = st.columns(5)
-    c1.metric("Играчи", format_number(player_stats[PLAYER_COL].nunique()))
-    c2.metric("Термини", format_number(raw_df["Game Label"].nunique()))
+    # icon (inline SVG), label, value, subtitle, accent color
+    icon_players = """<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 19c0-3 2.5-5 5.5-5s5.5 2 5.5 5"/><circle cx="17.5" cy="9" r="2.4"/><path d="M15.8 14.2c2.3.3 4 2 4 4.4"/></svg>"""
+    icon_games = """<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3.5" y="5" width="17" height="15" rx="2.2"/><path d="M3.5 9.5h17"/><path d="M8 3v4M16 3v4"/></svg>"""
+    icon_goals = """<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="8.5"/><path d="M12 6.8l3.2 2.3-1.2 3.8h-4l-1.2-3.8z"/><path d="M12 6.8V4M8 17.8 5.6 20M16 17.8 18.4 20M4.2 9.3 6.6 9M19.8 9.3 17.4 9"/></svg>"""
+    icon_assists = """<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 19.5 17 6.5"/><path d="M12.5 5h5.5v5.5"/><path d="M5.5 14.5 4 19.5l5-1.5"/></svg>"""
+    icon_minutes = """<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l3 2"/><path d="M9.5 2.5h5M12 5V2.5"/></svg>"""
+
+    cards = [
+        (icon_players, "Играчи", format_number(player_stats[PLAYER_COL].nunique()), "активних играча", "#2f9e5c"),
+        (icon_games, "Термини", format_number(raw_df["Game Label"].nunique()), "одиграна термина", "#2f9e5c"),
+    ]
     if "Goals" in player_stats.columns:
-        c3.metric("Голови", format_number(player_stats["Goals"].sum()))
+        cards.append((icon_goals, "Голови", format_number(player_stats["Goals"].sum()), "постигнути голови", "#2f9e5c"))
     if "Assists" in player_stats.columns:
-        c4.metric("Асистенције", format_number(player_stats["Assists"].sum()))
+        cards.append((icon_assists, "Асистенције", format_number(player_stats["Assists"].sum()), "забележене асистенције", "#5b6bf0"))
     if MINUTES_COL in player_stats.columns:
-        c5.metric("Минути", format_number(player_stats[MINUTES_COL].sum()))
+        cards.append((icon_minutes, "Минути", format_number(player_stats[MINUTES_COL].sum()), "укупно минута", "#e0a23a"))
+
+    card_html = "".join(
+        f"""
+        <div class="bd-metric-card">
+            <div class="bd-metric-icon" style="color:{color};border-color:{color}33;background:{color}14;">{icon}</div>
+            <div class="bd-metric-label">{label}</div>
+            <div class="bd-metric-value">{value}</div>
+            <div class="bd-metric-sub">{sub}</div>
+            <div class="bd-metric-bar" style="background:linear-gradient(90deg,{color},{color}00);"></div>
+        </div>
+        """
+        for icon, label, value, sub, color in cards
+    )
+
+    st.markdown(
+        f"""
+        <style>
+        .bd-metric-row {{
+            display: flex;
+            gap: 14px;
+            flex-wrap: wrap;
+            margin: 0.4rem 0 0.2rem 0;
+        }}
+        .bd-metric-card {{
+            position: relative;
+            flex: 1 1 190px;
+            min-width: 170px;
+            background: #161922;
+            border: 1px solid rgba(255,255,255,0.06);
+            border-radius: 14px;
+            padding: 1.15rem 1.2rem 1.3rem 1.2rem;
+            overflow: hidden;
+        }}
+        .bd-metric-icon {{
+            width: 38px;
+            height: 38px;
+            border-radius: 9px;
+            border: 1px solid;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 8px;
+            margin-bottom: 0.7rem;
+        }}
+        .bd-metric-icon svg {{ width: 100%; height: 100%; }}
+        .bd-metric-label {{
+            font-size: 0.68rem;
+            font-weight: 700;
+            letter-spacing: 0.09em;
+            text-transform: uppercase;
+            color: #9aa0ad;
+            margin-bottom: 0.35rem;
+        }}
+        .bd-metric-value {{
+            font-size: 1.9rem;
+            font-weight: 700;
+            color: #f2f3f5;
+            line-height: 1.1;
+            margin-bottom: 0.3rem;
+        }}
+        .bd-metric-sub {{
+            font-size: 0.78rem;
+            color: #6b7280;
+        }}
+        .bd-metric-bar {{
+            position: absolute;
+            left: 0;
+            bottom: 0;
+            height: 4px;
+            width: 60%;
+            border-radius: 0 4px 4px 0;
+        }}
+        </style>
+        <div class="bd-metric-row">{card_html}</div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 def make_top_bar(
