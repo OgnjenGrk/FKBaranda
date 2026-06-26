@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import io
 from itertools import combinations
 from pathlib import Path
@@ -186,6 +187,9 @@ GOALS_DATA_CANDIDATES = [
     Path("Fudbal Baranda Golovi.xlsx"),
     Path("Fudbal Baranda Golovi.csv"),
 ]
+
+# Лого фајл — стави logo.png у исти фолдер као app.py (нпр. у root GitHub репозиторијума).
+LOGO_PATH = Path("logo.png")
 
 PLAYER_COL = "Player Name"
 GAME_COL = "Date"
@@ -487,6 +491,24 @@ def format_number(value: float | int | None, decimals: int = 0) -> str:
     if decimals == 0:
         return f"{value:,.0f}".replace(",", ".")
     return f"{value:,.{decimals}f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+def render_page_title(title: str, logo_height: int = 52) -> None:
+    """Прикажи наслов странице, са логом ФК Баранда поред њега ако постоји."""
+    if LOGO_PATH.exists():
+        encoded_logo = base64.b64encode(LOGO_PATH.read_bytes()).decode()
+        st.markdown(
+            f"""
+            <div style='display:flex;align-items:center;gap:0.8rem;margin-bottom:0.2rem'>
+                <img src='data:image/png;base64,{encoded_logo}'
+                     style='height:{logo_height}px;width:auto;border-radius:8px;' />
+                <h1 style='margin:0;color:#f9fafb;'>{title}</h1>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    else:
+        st.title(title)
 
 
 def parse_game_dates(values: pd.Series) -> pd.Series:
@@ -1282,12 +1304,20 @@ def show_table(
     max_rows: int = 250,
     show_index: bool = False,
     freeze_first_col: bool = False,
+    decimals: dict[str, int] | None = None,
 ) -> None:
     display_df = data.copy()
 
     if len(display_df) > max_rows:
         st.caption(f"Приказано је првих {max_rows} редова од укупно {len(display_df)}.")
         display_df = display_df.head(max_rows)
+
+    if decimals is not None:
+        for column in display_df.select_dtypes(include="number").columns:
+            places = decimals.get(column, 0)
+            display_df[column] = display_df[column].round(places)
+            if places == 0:
+                display_df[column] = display_df[column].astype("Int64")
 
     display_df = prepare_display_table(display_df, show_index=show_index)
     if show_index and display_df.index.name is None:
@@ -1950,7 +1980,7 @@ if filtered_players.empty:
 # 🏆 ПОЧЕТНА
 # ═══════════════════════════════════════════════════════════════════════════════
 if page == "🏆 Почетна":
-    st.title("Добродошли у ФК Баранда")
+    render_page_title("ФК Баранда (Бежанија)")
     st.caption("Преглед сезоне и најважније статистике нашег термина.")
 
     # ── Метрике ──────────────────────────────────────────────────────────────
@@ -2765,7 +2795,10 @@ elif page == "📊 Историја термина":
             "Goals Conceded",
         ],
     )
-    show_table(game_df[match_cols].sort_values(TEAM_COL if TEAM_COL in match_cols else PLAYER_COL))
+    show_table(
+        game_df[match_cols].sort_values(TEAM_COL if TEAM_COL in match_cols else PLAYER_COL),
+        decimals={"Pass Accuracy": 1, "Dribble Accuracy": 1},
+    )
 
     # ── Голови у термину ─────────────────────────────────────────────────────
     if not goals_df.empty:
