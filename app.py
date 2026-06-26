@@ -16,6 +16,89 @@ st.set_page_config(
     layout="wide",
 )
 
+# Тамна тема преко CSS инјекције
+st.markdown("""
+<style>
+/* Основна позадина и боје */
+[data-testid="stAppViewContainer"] {
+    background-color: #0e1117;
+    color: #e8eaed;
+}
+[data-testid="stSidebar"] {
+    background-color: #111318;
+    border-right: 1px solid rgba(255,255,255,0.07);
+}
+[data-testid="stSidebar"] * {
+    color: #c9d1d9 !important;
+}
+[data-testid="stSidebar"] [data-testid="stRadio"] label:has(input:checked) {
+    background: rgba(47,125,89,0.25) !important;
+    border-radius: 6px;
+    color: #4ade80 !important;
+}
+/* Метрике */
+[data-testid="stMetric"] {
+    background: #1a1d24;
+    border: 1px solid rgba(255,255,255,0.07);
+    border-radius: 10px;
+    padding: 0.8rem 1rem;
+}
+[data-testid="stMetricLabel"] {
+    color: #9ca3af !important;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+[data-testid="stMetricValue"] {
+    color: #f9fafb !important;
+    font-weight: 700;
+}
+/* Заглавља */
+h1, h2, h3, h4 {
+    color: #f9fafb !important;
+}
+/* Дивидер */
+hr {
+    border-color: rgba(255,255,255,0.08) !important;
+}
+/* Табови */
+[data-testid="stTabs"] [role="tab"] {
+    color: #9ca3af;
+    border-bottom: 2px solid transparent;
+}
+[data-testid="stTabs"] [role="tab"][aria-selected="true"] {
+    color: #4ade80 !important;
+    border-bottom-color: #2f7d59 !important;
+}
+/* Selectbox и слајдери */
+[data-testid="stSelectbox"] > div > div,
+[data-testid="stMultiSelect"] > div > div {
+    background: #1a1d24 !important;
+    border: 1px solid rgba(255,255,255,0.12) !important;
+    color: #e8eaed !important;
+}
+/* Слајдер */
+[data-testid="stSlider"] .stSlider > div > div {
+    background: #2f7d59 !important;
+}
+/* Info/warning поруке */
+[data-testid="stInfo"] {
+    background: rgba(47,125,89,0.1);
+    border: 1px solid rgba(47,125,89,0.3);
+    color: #c9d1d9 !important;
+}
+/* Caption текст */
+[data-testid="stCaptionContainer"] {
+    color: #6b7280 !important;
+}
+/* Дугмад за преузимање */
+[data-testid="stDownloadButton"] button {
+    background: #1a1d24 !important;
+    border: 1px solid rgba(255,255,255,0.12) !important;
+    color: #e8eaed !important;
+}
+</style>
+""", unsafe_allow_html=True)
 
 TERMINI_DATA_CANDIDATES = [
     Path(r"C:\Users\beoog\Desktop\Fudbal Bezanija\Sajt\Fudbal Bezanija Termini.xlsx"),
@@ -774,10 +857,10 @@ def points_to_win_value(points: float) -> float:
 
 
 @st.cache_data(show_spinner=False)
-def build_same_team_heatmap(df: pd.DataFrame, min_games: int) -> pd.DataFrame:
+def build_same_team_heatmap(df: pd.DataFrame, min_games: int) -> tuple[pd.DataFrame, pd.DataFrame]:
     required = {GAME_COL, TEAM_COL, PLAYER_COL, POINTS_COL}
     if not required.issubset(df.columns):
-        return pd.DataFrame()
+        return pd.DataFrame(), pd.DataFrame()
 
     pair_stats: dict[tuple[str, str], dict[str, float]] = {}
     players_per_game = df.groupby([GAME_COL, TEAM_COL])[PLAYER_COL].apply(list)
@@ -794,21 +877,24 @@ def build_same_team_heatmap(df: pd.DataFrame, min_games: int) -> pd.DataFrame:
             pair_stats[pair]["wins"] += win_value
 
     heatmap = pd.DataFrame(index=players, columns=players, dtype=float)
+    games_matrix = pd.DataFrame(index=players, columns=players, dtype=float)
     for (p1, p2), stats in pair_stats.items():
         if stats["games"] >= min_games:
             win_pct = stats["wins"] / stats["games"] * 100
             heatmap.loc[p1, p2] = win_pct
             heatmap.loc[p2, p1] = win_pct
+            games_matrix.loc[p1, p2] = int(stats["games"])
+            games_matrix.loc[p2, p1] = int(stats["games"])
 
     valid = heatmap.notna().any(axis=1)
-    return heatmap.loc[valid, valid]
+    return heatmap.loc[valid, valid], games_matrix.loc[valid, valid]
 
 
 @st.cache_data(show_spinner=False)
-def build_opponent_heatmap(df: pd.DataFrame, min_games: int) -> pd.DataFrame:
+def build_opponent_heatmap(df: pd.DataFrame, min_games: int) -> tuple[pd.DataFrame, pd.DataFrame]:
     required = {GAME_COL, TEAM_COL, PLAYER_COL, POINTS_COL}
     if not required.issubset(df.columns):
-        return pd.DataFrame()
+        return pd.DataFrame(), pd.DataFrame()
 
     pair_stats: dict[tuple[str, str], dict[str, float]] = {}
     players = sorted(df[PLAYER_COL].dropna().astype(str).unique())
@@ -839,13 +925,15 @@ def build_opponent_heatmap(df: pd.DataFrame, min_games: int) -> pd.DataFrame:
                 pair_stats[(player, opponent)]["wins"] += points_to_win_value(team_2_points)
 
     heatmap = pd.DataFrame(index=players, columns=players, dtype=float)
+    games_matrix = pd.DataFrame(index=players, columns=players, dtype=float)
     for (player, opponent), stats in pair_stats.items():
         if stats["games"] >= min_games:
             heatmap.loc[player, opponent] = stats["wins"] / stats["games"] * 100
+            games_matrix.loc[player, opponent] = int(stats["games"])
 
     valid_rows = heatmap.notna().any(axis=1)
     valid_cols = heatmap.notna().any(axis=0)
-    return heatmap.loc[valid_rows, valid_cols]
+    return heatmap.loc[valid_rows, valid_cols], games_matrix.loc[valid_rows, valid_cols]
 
 
 def heatmap_figure(heatmap: pd.DataFrame, title: str, colorscale: str) -> go.Figure:
@@ -951,6 +1039,7 @@ def show_table(
     data: pd.DataFrame,
     max_rows: int = 250,
     show_index: bool = False,
+    freeze_first_col: bool = False,
 ) -> None:
     display_df = data.copy()
 
@@ -970,71 +1059,112 @@ def show_table(
         na_rep="-",
     )
     table_height = min(590, max(150, 42 * (len(display_df) + 1)))
+    freeze_js = "true" if freeze_first_col else "false"
     components.html(
         f"""
         <style>
         body {{
             margin: 0;
             font-family: "Source Sans Pro", sans-serif;
+            background: transparent;
         }}
         .fk-table-wrap {{
             max-height: 560px;
             overflow: auto;
-            border: 1px solid rgba(49, 51, 63, 0.16);
+            border: 1px solid rgba(255,255,255,0.08);
             border-radius: 8px;
+            background: #0e1117;
         }}
         .fk-table {{
             width: 100%;
             border-collapse: collapse;
             font-size: 0.9rem;
+            color: #e8eaed;
         }}
         .fk-table thead th {{
             position: sticky;
             top: 0;
-            z-index: 1;
-            background: #f7f7f8;
-            color: #1f2937;
+            z-index: 2;
+            background: #1a1d24;
+            color: #9ca3af;
             text-align: left;
-            border-bottom: 1px solid rgba(49, 51, 63, 0.2);
-            padding: 0.55rem 0.65rem;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+            padding: 0.55rem 0.75rem;
             white-space: nowrap;
+            font-weight: 600;
+            font-size: 0.78rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
         }}
         .fk-table thead th.sortable {{
             cursor: pointer;
             user-select: none;
         }}
         .fk-table thead th.sortable:hover {{
-            background: #eceff3;
+            background: #22262f;
+            color: #e8eaed;
         }}
         .fk-table td,
         .fk-table tbody th {{
-            border-bottom: 1px solid rgba(49, 51, 63, 0.1);
-            padding: 0.45rem 0.65rem;
+            border-bottom: 1px solid rgba(255,255,255,0.06);
+            padding: 0.45rem 0.75rem;
             white-space: nowrap;
+            color: #e8eaed;
         }}
         .fk-table tbody th {{
-            color: #1f2937;
+            color: #f9fafb;
             font-weight: 600;
             text-align: left;
         }}
         .fk-table tbody tr:nth-child(even) td,
         .fk-table tbody tr:nth-child(even) th {{
-            background: #fafafa;
+            background: rgba(255,255,255,0.03);
+        }}
+        .fk-table tbody tr:hover td,
+        .fk-table tbody tr:hover th {{
+            background: rgba(47,125,89,0.15);
         }}
         .sort-arrows {{
             margin-left: 0.35rem;
-            color: #6b7280;
+            color: #4b5563;
             font-size: 0.72rem;
-            letter-spacing: 0;
         }}
         .fk-table th.sorted-desc .sort-arrows,
         .fk-table th.sorted-asc .sort-arrows {{
-            color: #111827;
+            color: #2f7d59;
+        }}
+        .fk-table.freeze td:first-child,
+        .fk-table.freeze tbody th:first-child {{
+            position: sticky;
+            left: 0;
+            z-index: 1;
+            background: #0e1117;
+            border-right: 1px solid rgba(255,255,255,0.1);
+            font-weight: 600;
+        }}
+        .fk-table.freeze tbody tr:nth-child(even) td:first-child,
+        .fk-table.freeze tbody tr:nth-child(even) th:first-child {{
+            background: #111318;
+        }}
+        .fk-table.freeze tbody tr:hover td:first-child,
+        .fk-table.freeze tbody tr:hover th:first-child {{
+            background: #0d1a12;
+        }}
+        .fk-table.freeze thead th:first-child {{
+            position: sticky;
+            left: 0;
+            z-index: 3;
+            background: #1a1d24;
+            border-right: 1px solid rgba(255,255,255,0.1);
         }}
         </style>
         <div class="fk-table-wrap">{html}</div>
         <script>
+        const freezeFirstCol = {freeze_js};
         const table = document.querySelector(".fk-table");
+        if (table && freezeFirstCol) {{
+            table.classList.add("freeze");
+        }}
 
         function normalizeValue(text) {{
             const value = text.trim();
@@ -1042,7 +1172,7 @@ def show_table(
                 return {{ kind: "empty", value: "" }};
             }}
 
-            const dateMatch = value.match(/^(\\d{{1,2}})\\.\\s*(\\d{{1,2}})\\.\\s*(\\d{{4}})\\.$/);
+            const dateMatch = value.match(/^(\d{{1,2}})\.\s*(\d{{1,2}})\.\s*(\d{{4}})\.$/);
             if (dateMatch) {{
                 const day = Number(dateMatch[1]);
                 const month = Number(dateMatch[2]) - 1;
@@ -1050,8 +1180,8 @@ def show_table(
                 return {{ kind: "number", value: new Date(year, month, day).getTime() }};
             }}
 
-            const numberCandidate = value.replace(/\\./g, "").replace(",", ".");
-            if (/^-?\\d+(\\.\\d+)?$/.test(numberCandidate)) {{
+            const numberCandidate = value.replace(/\./g, "").replace(",", ".");
+            if (/^-?\d+(\.\d+)?$/.test(numberCandidate)) {{
                 return {{ kind: "number", value: Number(numberCandidate) }};
             }}
 
@@ -1108,7 +1238,6 @@ def show_table(
         height=table_height,
         scrolling=False,
     )
-
 
 def count_by_column(df: pd.DataFrame, column: str, value_name: str) -> pd.DataFrame:
     if column not in df.columns:
@@ -1696,7 +1825,8 @@ if page == "🏆 Почетна":
         filtered_players[table_cols].sort_values(
             "Goal Contributions per 60" if "Goal Contributions per 60" in table_cols else "Games Played",
             ascending=False,
-        )
+        ),
+        freeze_first_col=True,
     )
 
 
@@ -1888,7 +2018,7 @@ elif page == "🤝 Хемија":
         min_pair_games = st.slider("Минимум заједничких термина", 1, 10, 3)
 
         # Хемија анализа - исти тим
-        same_heatmap = build_same_team_heatmap(df, min_pair_games)
+        same_heatmap, same_games_matrix = build_same_team_heatmap(df, min_pair_games)
 
         # Рачунај парове за топ/флоп
         st.subheader("Најбољи и најгори парови")
@@ -1898,7 +2028,9 @@ elif page == "🤝 Хемија":
                 for p2 in same_heatmap.columns:
                     val = same_heatmap.loc[p1, p2]
                     if pd.notna(val) and p1 < p2:
-                        pair_rows.append({"Пар": f"{p1} + {p2}", "Победе %": round(val, 1)})
+                        ng = same_games_matrix.loc[p1, p2] if (p1 in same_games_matrix.index and p2 in same_games_matrix.columns) else None
+                        ng_val = int(ng) if pd.notna(ng) else "-"
+                        pair_rows.append({"Пар": f"{p1} + {p2}", "Победе %": round(val, 1), "Заједно термина": ng_val})
             pairs_df = pd.DataFrame(pair_rows).sort_values("Победе %", ascending=False)
 
             if not pairs_df.empty:
@@ -1918,6 +2050,9 @@ elif page == "🤝 Хемија":
             if same_heatmap.empty:
                 st.info("Нема парова који пролазе задати минимум.")
             else:
+                # Припреми customdata матрицу са бројем термина
+                import numpy as np
+                games_vals = same_games_matrix.reindex(index=same_heatmap.index, columns=same_heatmap.columns).values
                 fig_h = px.imshow(
                     same_heatmap,
                     text_auto=".0f",
@@ -1929,7 +2064,8 @@ elif page == "🤝 Хемија":
                     title="Проценат победа када играчи играју заједно",
                 )
                 fig_h.update_traces(
-                    hovertemplate="<b>%{y}</b> + <b>%{x}</b><br>Заједно одиграних термина: %{customdata}<extra></extra>",
+                    customdata=games_vals,
+                    hovertemplate="<b>%{y}</b> + <b>%{x}</b><br>Победе: %{z:.0f}%<br>Заједничких термина: %{customdata:.0f}<extra></extra>",
                 )
                 fig_h.update_layout(
                     height=max(520, 28 * len(same_heatmap.index) + 160),
@@ -1939,14 +2075,32 @@ elif page == "🤝 Хемија":
                 st.plotly_chart(fig_h, use_container_width=True)
 
         with tab_opp:
-            opp_heatmap = build_opponent_heatmap(df, min_pair_games)
+            opp_heatmap, opp_games_matrix = build_opponent_heatmap(df, min_pair_games)
             if opp_heatmap.empty:
                 st.info("Нема дуела који пролазе задати минимум.")
             else:
-                st.plotly_chart(
-                    heatmap_figure(opp_heatmap, "Проценат победа играча против конкретног противника", "RdBu"),
-                    use_container_width=True,
+                import numpy as np
+                opp_games_vals = opp_games_matrix.reindex(index=opp_heatmap.index, columns=opp_heatmap.columns).values
+                fig_opp = px.imshow(
+                    opp_heatmap,
+                    text_auto=".0f",
+                    color_continuous_scale="RdBu",
+                    zmin=0,
+                    zmax=100,
+                    aspect="auto",
+                    labels=dict(color="Победе %"),
+                    title="Проценат победа играча против конкретног противника",
                 )
+                fig_opp.update_traces(
+                    customdata=opp_games_vals,
+                    hovertemplate="<b>%{y}</b> vs <b>%{x}</b><br>Победе: %{z:.0f}%<br>Дуела одиграно: %{customdata:.0f}<extra></extra>",
+                )
+                fig_opp.update_layout(
+                    height=max(520, 28 * len(opp_heatmap.index) + 160),
+                    xaxis_title="", yaxis_title="",
+                    margin=dict(l=8, r=8, t=56, b=24),
+                )
+                st.plotly_chart(fig_opp, use_container_width=True)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
