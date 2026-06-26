@@ -1107,7 +1107,7 @@ def quadrant_chart(
     cols_needed = list(dict.fromkeys([PLAYER_COL, x_metric, y_metric, size_metric, "Games Played"]))
     plot_df = data[cols_needed].dropna()
 
-    # Боја увек по броју термина (Games Played) без обзира на Величину тачке
+    # Боја прати изабрану Величину тачке
     fig = px.scatter(
         plot_df,
         x=x_metric,
@@ -1115,9 +1115,9 @@ def quadrant_chart(
         size=size_metric,
         hover_name=PLAYER_COL,
         text=PLAYER_COL,
-        color="Games Played",
+        color=size_metric,
         color_continuous_scale="Viridis",
-        range_color=[plot_df["Games Played"].min(), plot_df["Games Played"].max()],
+        range_color=[plot_df[size_metric].min(), plot_df[size_metric].max()],
         title=title,
         labels=display_labels(cols_needed),
     )
@@ -1142,7 +1142,7 @@ def quadrant_chart(
         margin=dict(l=8, r=8, t=56, b=24),
         xaxis_title=display_label(x_metric),
         yaxis_title=display_label(y_metric),
-        coloraxis_colorbar_title="Термини",
+        coloraxis_colorbar_title=display_label(size_metric),
     )
     return fig
 
@@ -2044,7 +2044,7 @@ if filtered_players.empty:
 # 🏆 ПОЧЕТНА
 # ═══════════════════════════════════════════════════════════════════════════════
 if page == "🏆 Почетна":
-    render_page_title("ФК Баранда — сезона 2025/26")
+    render_page_title("ФК Баранда — сезона 2025/26.")
     st.caption("Статистички преглед сезоне.")
 
     # ── Метрике ──────────────────────────────────────────────────────────────
@@ -2692,7 +2692,7 @@ elif page == "🥇 Награде":
         if "Goals per 60" in filtered_players.columns:
             gb_row = filtered_players.sort_values("Goals per 60", ascending=False).iloc[0]
             award_card(
-                "⚽", "Golden Boot — Топ стрелац",
+                "⚽", "Golden Boot — Најбољи стрелац",
                 gb_row[PLAYER_COL],
                 f"{format_number(gb_row['Goals per 60'], 2)} гол./60 мин",
                 f"Укупно голова: {format_number(gb_row.get('Goals', 0))}",
