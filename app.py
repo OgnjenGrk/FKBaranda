@@ -849,6 +849,31 @@ def apply_player_filters(
     return filtered.copy()
 
 
+def player_stat_rank(
+    filtered_players: pd.DataFrame,
+    player: str,
+    column: str,
+) -> int | None:
+    """Позиција (ранг) играча у датој колони међу свим играчима из filtered_players.
+
+    Виша вредност статистике = боља позиција (ранг 1 = најбоље). Играчи са
+    истоветном вредношћу деле исти ранг (стандардни competition ranking).
+    """
+    if column not in filtered_players.columns or player not in filtered_players[PLAYER_COL].values:
+        return None
+
+    values = pd.to_numeric(filtered_players[column], errors="coerce")
+    player_value = values[filtered_players[PLAYER_COL] == player]
+    if player_value.empty or pd.isna(player_value.iloc[0]):
+        return None
+
+    ranks = values.rank(method="min", ascending=False)
+    player_rank = ranks[filtered_players[PLAYER_COL] == player]
+    if player_rank.empty or pd.isna(player_rank.iloc[0]):
+        return None
+    return int(player_rank.iloc[0])
+
+
 def metric_card_grid(player_stats: pd.DataFrame, raw_df: pd.DataFrame) -> None:
     c1, c2, c3, c4, c5 = st.columns(5)
     c1.metric("Играчи", format_number(player_stats[PLAYER_COL].nunique()))
@@ -1308,6 +1333,7 @@ def show_table(
     show_index: bool = False,
     freeze_first_col: bool = False,
     decimals: dict[str, int] | None = None,
+    pinned_rows: int = 0,
 ) -> None:
     display_df = data.copy()
 
@@ -1323,8 +1349,8 @@ def show_table(
                 display_df[column] = display_df[column].astype("Int64")
 
     display_df = prepare_display_table(display_df, show_index=show_index)
-    if show_index and display_df.index.name is None:
-        display_df.index.name = "Статистика"
+    if show_index:
+        display_df.index.name = None
 
     html = display_df.to_html(
         index=show_index,
@@ -1335,6 +1361,7 @@ def show_table(
     )
     table_height = min(590, max(150, 42 * (len(display_df) + 1)))
     freeze_js = "true" if freeze_first_col else "false"
+    pinned_rows_js = max(0, int(pinned_rows))
     components.html(
         f"""
         <style>
@@ -1402,6 +1429,16 @@ def show_table(
         .fk-table tbody tr:hover th {{
             background: rgba(47,125,89,0.15);
         }}
+        .fk-table tbody tr.fk-pinned-row td,
+        .fk-table tbody tr.fk-pinned-row th {{
+            background: rgba(47,125,89,0.18);
+            font-weight: 700;
+            border-bottom: 1px solid rgba(47,125,89,0.4);
+        }}
+        .fk-table tbody tr.fk-pinned-row:hover td,
+        .fk-table tbody tr.fk-pinned-row:hover th {{
+            background: rgba(47,125,89,0.25);
+        }}
         .sort-arrows {{
             margin-left: 0.35rem;
             color: #4b5563;
@@ -1439,6 +1476,7 @@ def show_table(
         <div class="fk-table-wrap">{html}</div>
         <script>
         const freezeFirstCol = {freeze_js};
+        const pinnedRows = {pinned_rows_js};
         const table = document.querySelector(".fk-table");
         if (table && freezeFirstCol) {{
             table.classList.add("freeze");
@@ -1485,6 +1523,9 @@ def show_table(
         if (table) {{
             const headers = Array.from(table.querySelectorAll("thead th"));
             const body = table.querySelector("tbody");
+            const allBodyRows = body ? Array.from(body.querySelectorAll("tr")) : [];
+            const pinned = allBodyRows.slice(0, pinnedRows);
+            pinned.forEach((row) => row.classList.add("fk-pinned-row"));
 
             headers.forEach((header, columnIndex) => {{
                 const label = header.textContent.trim() || "Статистика";
@@ -1501,12 +1542,15 @@ def show_table(
                     header.dataset.sortDirection = nextDirection;
                     header.classList.add(nextDirection === "desc" ? "sorted-desc" : "sorted-asc");
 
-                    const rows = Array.from(body.querySelectorAll("tr"));
+                    const rows = Array.from(body.querySelectorAll("tr")).filter(
+                        (row) => !row.classList.contains("fk-pinned-row")
+                    );
                     rows.sort((rowA, rowB) => {{
                         const cellA = rowA.children[columnIndex];
                         const cellB = rowB.children[columnIndex];
                         return compareCells(cellA, cellB, nextDirection);
                     }});
+                    pinned.forEach((row) => body.appendChild(row));
                     rows.forEach((row) => body.appendChild(row));
                 }});
             }});
@@ -2187,7 +2231,6 @@ elif page == "👤 Играчи":
         profile_cols = existing_columns(
             player_stats,
             [
-                PLAYER_COL,
                 "Games Played",
                 MINUTES_COL,
                 "Goal Contributions per 60",
@@ -2207,9 +2250,41 @@ elif page == "👤 Играчи":
                 "Goals Conceded",
             ],
         )
+
+        stat_decimals = {
+            "Goal Contributions per 60": 2,
+            "Goals per 60": 2,
+            "Assists per 60": 2,
+            "Big Chances Created per 60": 2,
+            "Shots on Goal per 60": 2,
+            "Total Passes per 60": 2,
+            "Successful passes per 60": 2,
+            "Interceptions per 60": 2,
+            "Tackles Won per 60": 2,
+            "Pass Accuracy": 1,
+            "Dribble Accuracy": 1,
+        }
+
+        stat_rows = []
+        # Ред играча: увек на врху, не учествује у сортирању и нема ранг.
+        stat_rows.append({"Статистика": "Играч", "Вредност": player, "Позиција": "-"})
+        for col in profile_cols:
+            raw_value = row[col] if col in row.index else None
+            value = format_number(raw_value, stat_decimals.get(col, 0))
+            rank = player_stat_rank(filtered_players, player, col)
+            stat_rows.append(
+                {
+                    "Статистика": display_label(col),
+                    "Вредност": value,
+                    "Позиција": format_number(rank) if rank is not None else "-",
+                }
+            )
+        key_stats_df = pd.DataFrame(stat_rows)
+
         show_table(
-            player_stats[player_stats[PLAYER_COL] == player][profile_cols].T.rename(columns={row.name: "Вредност"}),
-            show_index=True,
+            key_stats_df,
+            show_index=False,
+            pinned_rows=1,
         )
 
     st.divider()
