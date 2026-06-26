@@ -2129,12 +2129,11 @@ with st.sidebar:
 
     st.divider()
     st.caption("Филтери за анализе")
-    default_min_minutes = 220 if MINUTES_COL in player_stats.columns else 0
-    min_games = st.slider("Минимум термина", 1, int(player_stats["Games Played"].max()), 1)
+    total_games_season = df["Game Label"].nunique()
+    max_games_played = int(player_stats["Games Played"].max())
+    default_min_games = min(max(round(total_games_season / 4), 1), max_games_played)
+    min_games = st.slider("Минимум термина", 1, max_games_played, default_min_games)
     min_minutes = 0
-    if MINUTES_COL in player_stats.columns:
-        max_minutes = int(player_stats[MINUTES_COL].max())
-        min_minutes = st.slider("Минимум минута", 0, max_minutes, min(default_min_minutes, max_minutes), step=10)
 
     st.divider()
     season_label = df["Game Sort"].max()
