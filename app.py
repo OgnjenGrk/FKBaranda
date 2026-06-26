@@ -451,7 +451,8 @@ st.markdown(
         z-index: 1;
         background: #f7f7f8;
         color: #1f2937;
-        text-align: left;
+        text-align: center;
+        vertical-align: middle;
         border-bottom: 1px solid rgba(49, 51, 63, 0.2);
         padding: 0.55rem 0.65rem;
         white-space: nowrap;
@@ -460,6 +461,8 @@ st.markdown(
         border-bottom: 1px solid rgba(49, 51, 63, 0.1);
         padding: 0.45rem 0.65rem;
         white-space: nowrap;
+        text-align: center;
+        vertical-align: middle;
     }
     .fk-table tr:nth-child(even) td {
         background: #fafafa;
@@ -1359,7 +1362,8 @@ def show_table(
             z-index: 2;
             background: #1a1d24;
             color: #9ca3af;
-            text-align: left;
+            text-align: center;
+            vertical-align: middle;
             border-bottom: 1px solid rgba(255,255,255,0.1);
             padding: 0.55rem 0.75rem;
             white-space: nowrap;
@@ -1382,11 +1386,13 @@ def show_table(
             padding: 0.45rem 0.75rem;
             white-space: nowrap;
             color: #e8eaed;
+            text-align: center;
+            vertical-align: middle;
         }}
         .fk-table tbody th {{
             color: #f9fafb;
             font-weight: 600;
-            text-align: left;
+            text-align: center;
         }}
         .fk-table tbody tr:nth-child(even) td,
         .fk-table tbody tr:nth-child(even) th {{
