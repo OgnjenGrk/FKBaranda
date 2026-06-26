@@ -19,13 +19,32 @@ st.set_page_config(
 # Тамна тема преко CSS инјекције
 st.markdown("""
 <style>
-/* Основна позадина и боје */
-[data-testid="stAppViewContainer"] {
-    background-color: #0e1117;
+/* Уклони бели header banner */
+[data-testid="stHeader"] {
+    background-color: #0e1117 !important;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+}
+header[data-testid="stHeader"]::before {
+    background-color: #0e1117 !important;
+}
+/* Уклони белу toolbar линију */
+[data-testid="stToolbar"] {
+    background-color: #0e1117 !important;
+}
+/* Основна позадина */
+html, body, [data-testid="stAppViewContainer"], .main, .block-container {
+    background-color: #0e1117 !important;
     color: #e8eaed;
 }
+[data-testid="stMain"] {
+    background-color: #0e1117 !important;
+}
+/* Сав бели простор на врху */
+.stApp {
+    background-color: #0e1117 !important;
+}
 [data-testid="stSidebar"] {
-    background-color: #111318;
+    background-color: #111318 !important;
     border-right: 1px solid rgba(255,255,255,0.07);
 }
 [data-testid="stSidebar"] * {
@@ -57,6 +76,9 @@ st.markdown("""
 h1, h2, h3, h4 {
     color: #f9fafb !important;
 }
+p, span, label, div {
+    color: #e8eaed;
+}
 /* Дивидер */
 hr {
     border-color: rgba(255,255,255,0.08) !important;
@@ -70,6 +92,9 @@ hr {
     color: #4ade80 !important;
     border-bottom-color: #2f7d59 !important;
 }
+[data-testid="stTabsContent"] {
+    background-color: #0e1117 !important;
+}
 /* Selectbox и слајдери */
 [data-testid="stSelectbox"] > div > div,
 [data-testid="stMultiSelect"] > div > div {
@@ -77,9 +102,12 @@ hr {
     border: 1px solid rgba(255,255,255,0.12) !important;
     color: #e8eaed !important;
 }
-/* Слајдер */
-[data-testid="stSlider"] .stSlider > div > div {
-    background: #2f7d59 !important;
+/* Plotly iframe контејнер */
+[data-testid="stPlotlyChart"] > div {
+    background: transparent !important;
+}
+.js-plotly-plot, .plot-container, .plotly {
+    background: transparent !important;
 }
 /* Info/warning поруке */
 [data-testid="stInfo"] {
@@ -88,7 +116,7 @@ hr {
     color: #c9d1d9 !important;
 }
 /* Caption текст */
-[data-testid="stCaptionContainer"] {
+[data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] * {
     color: #6b7280 !important;
 }
 /* Дугмад за преузимање */
@@ -97,8 +125,19 @@ hr {
     border: 1px solid rgba(255,255,255,0.12) !important;
     color: #e8eaed !important;
 }
+/* Multiselect тагови */
+[data-testid="stMultiSelect"] span[data-baseweb="tag"] {
+    background: rgba(47,125,89,0.3) !important;
+    color: #e8eaed !important;
+}
+/* Expander */
+[data-testid="stExpander"] {
+    background: #1a1d24 !important;
+    border: 1px solid rgba(255,255,255,0.07) !important;
+}
 </style>
 """, unsafe_allow_html=True)
+
 
 TERMINI_DATA_CANDIDATES = [
     Path(r"C:\Users\beoog\Desktop\Fudbal Bezanija\Sajt\Fudbal Bezanija Termini.xlsx"),
@@ -784,6 +823,9 @@ def make_top_bar(
     )
     fig.update_traces(texttemplate="%{text:.2s}", textposition="outside", cliponaxis=False)
     fig.update_layout(
+        paper_bgcolor='#0e1117',
+        plot_bgcolor='#1a1d24',
+        font=dict(color='#e8eaed'),
         height=max(360, 34 * len(top) + 120),
         xaxis_title="",
         yaxis_title="",
@@ -817,6 +859,9 @@ def percentile_radar(player_stats: pd.DataFrame, player: str, min_games: int, mi
         )
     )
     fig.update_layout(
+        paper_bgcolor='#0e1117',
+        plot_bgcolor='#1a1d24',
+        font=dict(color='#e8eaed'),
         polar=dict(radialaxis=dict(range=[0, 100], visible=True)),
         showlegend=False,
         height=520,
@@ -839,6 +884,9 @@ def comparison_chart(data: pd.DataFrame, players: list[str], metrics: list[str])
         labels={PLAYER_COL: "Играч"},
     )
     fig.update_layout(
+        paper_bgcolor='#0e1117',
+        plot_bgcolor='#1a1d24',
+        font=dict(color='#e8eaed'),
         height=520,
         xaxis_title="",
         yaxis_title="",
@@ -948,6 +996,9 @@ def heatmap_figure(heatmap: pd.DataFrame, title: str, colorscale: str) -> go.Fig
         title=title,
     )
     fig.update_layout(
+        paper_bgcolor='#0e1117',
+        plot_bgcolor='#1a1d24',
+        font=dict(color='#e8eaed'),
         height=max(520, 28 * len(heatmap.index) + 160),
         xaxis_title="",
         yaxis_title="",
@@ -991,6 +1042,9 @@ def quadrant_chart(
         yanchor="top",
     )
     fig.update_layout(
+        paper_bgcolor='#0e1117',
+        plot_bgcolor='#1a1d24',
+        font=dict(color='#e8eaed'),
         height=640,
         margin=dict(l=8, r=8, t=56, b=24),
         xaxis_title=display_label(x_metric),
@@ -1277,6 +1331,9 @@ def goal_count_bar(
     )
     fig.update_traces(textposition="outside", cliponaxis=False)
     fig.update_layout(
+        paper_bgcolor='#0e1117',
+        plot_bgcolor='#1a1d24',
+        font=dict(color='#e8eaed'),
         height=max(360, 34 * len(top) + 120),
         xaxis_title="",
         yaxis_title="",
@@ -1315,6 +1372,9 @@ def goal_timeline_figure(goal_rows: pd.DataFrame) -> go.Figure:
     )
     fig.update_traces(marker=dict(opacity=0.85, line=dict(width=1)))
     fig.update_layout(
+        paper_bgcolor='#0e1117',
+        plot_bgcolor='#1a1d24',
+        font=dict(color='#e8eaed'),
         height=max(420, 28 * plot_df["Goalscorer"].nunique() + 160),
         xaxis_title="Минут" if x_col == "Minute" else "Редослед гола",
         yaxis_title="Стрелац",
@@ -1375,6 +1435,9 @@ def minute_histogram_figure(goals: pd.DataFrame, bin_size: int) -> go.Figure:
         )
     )
     fig.update_layout(
+        paper_bgcolor='#0e1117',
+        plot_bgcolor='#1a1d24',
+        font=dict(color='#e8eaed'),
         title="Расподела постигнутих голова по минутима",
         height=470,
         bargap=0.04,
@@ -1406,7 +1469,13 @@ def interval_donut_figure(goals: pd.DataFrame, bin_size: int = 10) -> tuple[go.F
         hole=0.42,
         color_discrete_sequence=px.colors.qualitative.Set2,
     )
-    fig.update_layout(height=470, margin=dict(l=8, r=8, t=56, b=24))
+    fig.update_layout(
+        height=470,
+        paper_bgcolor='#0e1117',
+        plot_bgcolor='#1a1d24',
+        font=dict(color='#e8eaed'),
+        margin=dict(l=8, r=8, t=56, b=24),
+    )
     return fig, counts
 
 
@@ -1434,6 +1503,9 @@ def player_minute_heatmap_figure(
         title="Кад који играч постиже голове",
     )
     fig.update_layout(
+        paper_bgcolor='#0e1117',
+        plot_bgcolor='#1a1d24',
+        font=dict(color='#e8eaed'),
         height=max(480, 32 * len(heatmap.index) + 150),
         xaxis_title="Минут",
         yaxis_title="Играч",
@@ -1470,6 +1542,9 @@ def goalkeeper_minute_heatmap_figure(
         title="Кад голмани примају голове",
     )
     fig.update_layout(
+        paper_bgcolor='#0e1117',
+        plot_bgcolor='#1a1d24',
+        font=dict(color='#e8eaed'),
         height=max(420, 32 * len(heatmap.index) + 150),
         xaxis_title="Минут",
         yaxis_title="Голман",
@@ -1549,6 +1624,9 @@ def assist_scorer_bar_figure(pairs: pd.DataFrame, top_n: int) -> go.Figure:
     )
     fig.update_traces(textposition="outside", cliponaxis=False)
     fig.update_layout(
+        paper_bgcolor='#0e1117',
+        plot_bgcolor='#1a1d24',
+        font=dict(color='#e8eaed'),
         height=max(360, 34 * len(top) + 120),
         xaxis_title="",
         yaxis_title="",
@@ -1584,6 +1662,9 @@ def assist_scorer_sankey_figure(pairs: pd.DataFrame, top_n: int) -> go.Figure:
         ]
     )
     fig.update_layout(
+        paper_bgcolor='#0e1117',
+        plot_bgcolor='#1a1d24',
+        font=dict(color='#e8eaed'),
         title="Мрежа асистенција",
         height=520,
         margin=dict(l=8, r=8, t=56, b=24),
@@ -1754,8 +1835,11 @@ if page == "🏆 Почетна":
             # Просечан учинак играча у термину - форма индекс
             avg_pts = g_df[POINTS_COL].mean()
             goals_scored = g_df["Goals"].sum() if "Goals" in g_df.columns else 0
-            # Форма индекс 0-100 на основу бодова и голова
-            form_index = round(min(100, avg_pts * 30 + goals_scored * 2), 0)
+            total_players = g_df[PLAYER_COL].nunique()
+            # Форма индекс: бодови дају 0/50/100 базу, голови додају бонус
+            win_base = (avg_pts / 3.0) * 80
+            goal_bonus = min(20, goals_scored * 1.5) if total_players > 0 else 0
+            form_index = round(min(100, win_base + goal_bonus), 0)
             form_data.append({"Термин": gl, "Форма": form_index})
 
         if len(form_data) >= 2:
@@ -1774,6 +1858,9 @@ if page == "🏆 Почетна":
                 marker=dict(size=8),
             )
             fig_form.update_layout(
+                paper_bgcolor='#0e1117',
+                plot_bgcolor='#1a1d24',
+                font=dict(color='#e8eaed'),
                 yaxis_range=[0, 100],
                 height=300,
                 margin=dict(l=8, r=8, t=48, b=24),
@@ -1924,6 +2011,9 @@ elif page == "👤 Играчи":
             yaxis="y2",
         )
         fig_progress.update_layout(
+            paper_bgcolor='#0e1117',
+            plot_bgcolor='#1a1d24',
+            font=dict(color='#e8eaed'),
             height=380,
             yaxis=dict(title=display_label(progress_metric)),
             yaxis2=dict(title="Кумулативно", overlaying="y", side="right"),
@@ -2068,6 +2158,9 @@ elif page == "🤝 Хемија":
                     hovertemplate="<b>%{y}</b> + <b>%{x}</b><br>Победе: %{z:.0f}%<br>Заједничких термина: %{customdata:.0f}<extra></extra>",
                 )
                 fig_h.update_layout(
+                    paper_bgcolor='#0e1117',
+                    plot_bgcolor='#1a1d24',
+                    font=dict(color='#e8eaed'),
                     height=max(520, 28 * len(same_heatmap.index) + 160),
                     xaxis_title="", yaxis_title="",
                     margin=dict(l=8, r=8, t=56, b=24),
@@ -2096,6 +2189,9 @@ elif page == "🤝 Хемија":
                     hovertemplate="<b>%{y}</b> vs <b>%{x}</b><br>Победе: %{z:.0f}%<br>Дуела одиграно: %{customdata:.0f}<extra></extra>",
                 )
                 fig_opp.update_layout(
+                    paper_bgcolor='#0e1117',
+                    plot_bgcolor='#1a1d24',
+                    font=dict(color='#e8eaed'),
                     height=max(520, 28 * len(opp_heatmap.index) + 160),
                     xaxis_title="", yaxis_title="",
                     margin=dict(l=8, r=8, t=56, b=24),
@@ -2150,6 +2246,9 @@ elif page == "📈 Трендови":
             )
             fig_trend.update_traces(line_color="#2f7d59", textposition="top center", marker=dict(size=8))
             fig_trend.update_layout(
+                paper_bgcolor='#0e1117',
+                plot_bgcolor='#1a1d24',
+                font=dict(color='#e8eaed'),
                 height=380, xaxis_title="", margin=dict(l=8, r=8, t=48, b=24),
                 yaxis_title=display_label(trend_metric) if trend_metric else "",
             )
@@ -2171,7 +2270,11 @@ elif page == "📈 Трендови":
             title="Голови по месецима",
             text="Голови",
         )
-        fig_monthly.update_layout(height=350, xaxis_title="", margin=dict(l=8, r=8, t=48, b=24))
+        fig_monthly.update_layout(height=350, xaxis_title="", margin=dict(l=8, r=8, t=48, b=24),
+            paper_bgcolor='#0e1117',
+            plot_bgcolor='#1a1d24',
+            font=dict(color='#e8eaed'),
+        )
         st.plotly_chart(fig_monthly, use_container_width=True)
 
         st.divider()
