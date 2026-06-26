@@ -1463,8 +1463,12 @@ def assist_scorer_sankey_figure(pairs: pd.DataFrame, top_n: int) -> go.Figure:
     return fig
 
 
+
+# ── DATA LOADING ──────────────────────────────────────────────────────────────
+
 with st.sidebar:
     st.title("ФК Баранда")
+    st.caption("5-на-5 аналитика")
 
     default_file = load_default_file(TERMINI_DATA_CANDIDATES)
     if default_file is not None:
@@ -1511,15 +1515,12 @@ with st.sidebar:
     page = st.radio(
         "Навигација",
         [
-            "Преглед",
-            "Профил играча",
-            "Поређење играча",
-            "Листе",
-            "Голови",
-            "Анализа две осе",
-            "Синергија",
-            "Рекорди",
-            "Подаци",
+            "🏆 Почетна",
+            "👤 Играчи",
+            "🤝 Хемија",
+            "📈 Трендови",
+            "🥇 Награде",
+            "📊 Историја термина",
         ],
     )
 
@@ -1532,6 +1533,13 @@ with st.sidebar:
         max_minutes = int(player_stats[MINUTES_COL].max())
         min_minutes = st.slider("Минимум минута", 0, max_minutes, min(default_min_minutes, max_minutes), step=10)
 
+    st.divider()
+    season_label = df["Game Sort"].max()
+    if hasattr(season_label, "year"):
+        st.caption(f"Сезона {season_label.year - 1}/{str(season_label.year)[2:]}")
+    latest_game_label = df.sort_values("Game Sort")["Game Label"].iloc[-1]
+    st.caption(f"Последњи термин: {latest_game_label}")
+
 
 filtered_players = apply_player_filters(player_stats, min_games, min_minutes)
 if filtered_players.empty:
@@ -1539,10 +1547,115 @@ if filtered_players.empty:
     st.stop()
 
 
-if page == "Преглед":
-    st.title("Преглед сезоне")
+# ═══════════════════════════════════════════════════════════════════════════════
+# 🏆 ПОЧЕТНА
+# ═══════════════════════════════════════════════════════════════════════════════
+if page == "🏆 Почетна":
+    st.title("Добродошли у ФК Баранда")
+    st.caption("Преглед сезоне и најважније статистике нашег термина.")
+
+    # ── Метрике ──────────────────────────────────────────────────────────────
     metric_card_grid(player_stats, df)
 
+    st.divider()
+
+    # ── Последња утакмица ────────────────────────────────────────────────────
+    st.subheader("Последњи термин")
+    games_sorted = df.sort_values("Game Sort")
+    last_game_label = games_sorted["Game Label"].iloc[-1]
+    last_game_df = df[df["Game Label"] == last_game_label]
+
+    col_last, col_form = st.columns([1, 1])
+    with col_last:
+        if TEAM_COL in last_game_df.columns and POINTS_COL in last_game_df.columns:
+            teams = last_game_df[[TEAM_COL, POINTS_COL]].drop_duplicates(TEAM_COL)
+            if "Goals" in last_game_df.columns:
+                team_goals = last_game_df.groupby(TEAM_COL)["Goals"].sum().reset_index()
+                teams = teams.merge(team_goals, on=TEAM_COL, how="left")
+            if len(teams) == 2:
+                t1, t2 = teams.iloc[0], teams.iloc[1]
+                score1 = int(t1.get("Goals", 0)) if "Goals" in t1.index else "?"
+                score2 = int(t2.get("Goals", 0)) if "Goals" in t2.index else "?"
+                sc1, sc_sep, sc2 = st.columns([2, 1, 2])
+                sc1.metric(str(t1[TEAM_COL]), score1)
+                sc_sep.markdown("<h2 style='text-align:center;margin-top:1rem'>:</h2>", unsafe_allow_html=True)
+                sc2.metric(str(t2[TEAM_COL]), score2)
+
+        # MVP последње утакмице
+        if "Goal Contributions per 60" in last_game_df.columns:
+            mvp_col = "Goal Contributions per 60"
+        elif "Goals" in last_game_df.columns:
+            mvp_col = "Goals"
+        else:
+            mvp_col = None
+
+        if mvp_col and POINTS_COL in last_game_df.columns:
+            last_ps = build_player_stats(last_game_df)
+            if not last_ps.empty and mvp_col in last_ps.columns:
+                mvp_row = last_ps.sort_values(mvp_col, ascending=False).iloc[0]
+                mvp_name = mvp_row[PLAYER_COL]
+                mvp_val = mvp_row[mvp_col]
+                st.markdown(f"**МВП:** {mvp_name} — {format_number(mvp_val, 2)} {display_label(mvp_col)}")
+
+        # Стрелци и асистенти
+        if "Goals" in last_game_df.columns:
+            scorers = (
+                last_game_df[last_game_df["Goals"] > 0][[PLAYER_COL, "Goals"]]
+                .sort_values("Goals", ascending=False)
+            )
+            if not scorers.empty:
+                st.markdown("**Стрелци:**")
+                for _, r in scorers.iterrows():
+                    st.markdown(f"- {r[PLAYER_COL]}: {int(r['Goals'])}")
+
+    with col_form:
+        # Форма екипе (последних 5 термина)
+        game_labels_sorted = (
+            df[["Game Label", "Game Sort"]]
+            .drop_duplicates()
+            .sort_values("Game Sort")["Game Label"]
+            .tolist()
+        )
+        last_5 = game_labels_sorted[-5:]
+        form_data = []
+        for gl in last_5:
+            g_df = df[df["Game Label"] == gl]
+            if POINTS_COL not in g_df.columns:
+                continue
+            # Просечан учинак играча у термину - форма индекс
+            avg_pts = g_df[POINTS_COL].mean()
+            goals_scored = g_df["Goals"].sum() if "Goals" in g_df.columns else 0
+            # Форма индекс 0-100 на основу бодова и голова
+            form_index = round(min(100, avg_pts * 30 + goals_scored * 2), 0)
+            form_data.append({"Термин": gl, "Форма": form_index})
+
+        if len(form_data) >= 2:
+            form_df = pd.DataFrame(form_data)
+            fig_form = px.line(
+                form_df,
+                x="Термин",
+                y="Форма",
+                markers=True,
+                title="Форма екипе (последњих 5 термина)",
+                text="Форма",
+            )
+            fig_form.update_traces(
+                line_color="#2f7d59",
+                textposition="top center",
+                marker=dict(size=8),
+            )
+            fig_form.update_layout(
+                yaxis_range=[0, 100],
+                height=300,
+                margin=dict(l=8, r=8, t=48, b=24),
+                xaxis_title="",
+                yaxis_title="Индекс форме (0-100)",
+            )
+            st.plotly_chart(fig_form, use_container_width=True)
+
+    st.divider()
+
+    # ── Топ листе ─────────────────────────────────────────────────────────────
     st.subheader("Ко је носио игру")
     c1, c2 = st.columns(2)
     if "Goal Contributions per 60" in filtered_players.columns:
@@ -1550,36 +1663,21 @@ if page == "Преглед":
             make_top_bar(filtered_players, "Goal Contributions per 60", "Голови + асистенције на 60 минута"),
             use_container_width=True,
         )
-    elif "Goals per 60" in filtered_players.columns:
-        c1.plotly_chart(
-            make_top_bar(filtered_players, "Goals per 60", "Голови на 60 минута"),
-            use_container_width=True,
-        )
-
-    overview_second_metric = next(
-        (
-            metric
-            for metric in ["Interceptions per 60", "Total Passes per 60", "Successful passes per 60", "Tackles Won per 60", "Points per Game"]
-            if metric in filtered_players.columns
-        ),
-        None,
-    )
-    if overview_second_metric:
+    if "Interceptions per 60" in filtered_players.columns:
         c2.plotly_chart(
-            make_top_bar(
-                filtered_players,
-                overview_second_metric,
-                display_label(overview_second_metric),
-                color="#536dfe",
-            ),
+            make_top_bar(filtered_players, "Interceptions per 60", "Пресечене лопте на 60 минута", color="#536dfe"),
             use_container_width=True,
         )
 
+    st.divider()
+
+    # ── Табела играча ─────────────────────────────────────────────────────────
+    st.subheader("Табела играча")
     table_cols = existing_columns(
         filtered_players,
         [
             PLAYER_COL,
-            "Одиграно утакмица",
+            "Games Played",
             MINUTES_COL,
             "Goal Contributions per 60",
             "Goals per 60",
@@ -1590,12 +1688,10 @@ if page == "Преглед":
             "Tackles Won per 60",
             "Points per Game",
             "Pass Accuracy",
-            "Dribble Accuracy",
             "Goals",
             "Assists",
         ],
     )
-    st.subheader("Табела играча")
     show_table(
         filtered_players[table_cols].sort_values(
             "Goal Contributions per 60" if "Goal Contributions per 60" in table_cols else "Games Played",
@@ -1604,28 +1700,31 @@ if page == "Преглед":
     )
 
 
-elif page == "Профил играча":
-    st.title("Профил играча")
+# ═══════════════════════════════════════════════════════════════════════════════
+# 👤 ИГРАЧИ
+# ═══════════════════════════════════════════════════════════════════════════════
+elif page == "👤 Играчи":
+    st.title("Профили играча")
+
     player = st.selectbox("Изабери играча", sorted(filtered_players[PLAYER_COL].unique()))
     row = player_stats[player_stats[PLAYER_COL] == player].iloc[0]
 
-    c1, c2, c3, c4, c5 = st.columns(5)
-    if "Goals per 60" in row.index:
-        c1.metric("Голови/60", format_number(row["Goals per 60"], 2))
-    elif "Goals" in row.index:
-        c1.metric("Голови", format_number(row["Goals"]))
-    if "Assists per 60" in row.index:
-        c2.metric("Асист./60", format_number(row["Assists per 60"], 2))
-    elif "Assists" in row.index:
-        c2.metric("Асистенције", format_number(row["Assists"]))
-    if "Goal Contributions per 60" in row.index:
-        c3.metric("Г + А/60", format_number(row["Goal Contributions per 60"], 2))
-    elif "Goal Contributions" in row.index:
-        c3.metric("Г + А", format_number(row["Goal Contributions"]))
-    if "Points per Game" in row.index:
-        c4.metric("Бодови/термин", format_number(row["Points per Game"], 2))
-    c5.metric("Термини", format_number(row["Games Played"]))
+    # ── Картица играча ────────────────────────────────────────────────────────
+    with st.container():
+        c1, c2, c3, c4, c5 = st.columns(5)
+        if "Goals per 60" in row.index:
+            c1.metric("Голови/60", format_number(row["Goals per 60"], 2))
+        if "Assists per 60" in row.index:
+            c2.metric("Асист./60", format_number(row["Assists per 60"], 2))
+        if "Goal Contributions per 60" in row.index:
+            c3.metric("Г + А/60", format_number(row["Goal Contributions per 60"], 2))
+        if "Interceptions per 60" in row.index:
+            c4.metric("Прес./60", format_number(row["Interceptions per 60"], 2))
+        c5.metric("Термини", format_number(row["Games Played"]))
 
+    st.divider()
+
+    # ── Радар и статистике ────────────────────────────────────────────────────
     c1, c2 = st.columns([1.05, 0.95])
     with c1:
         st.subheader("Профил по перцентилима")
@@ -1652,8 +1751,6 @@ elif page == "Профил играча":
                 "Successful passes per 60",
                 "Interceptions per 60",
                 "Tackles Won per 60",
-                "Big Chances Created",
-                "Shots on Goal",
                 "Pass Accuracy",
                 "Dribble Accuracy",
                 "Goals",
@@ -1667,6 +1764,48 @@ elif page == "Профил играча":
             show_index=True,
         )
 
+    st.divider()
+
+    # ── График напретка по терминима ──────────────────────────────────────────
+    st.subheader("График напретка по терминима")
+    player_games = df[df[PLAYER_COL] == player].sort_values("Game Sort").copy()
+
+    progress_metric = st.selectbox(
+        "Статистика за праћење",
+        existing_columns(player_games, ["Goals", "Assists", "Interceptions", "Successful passes", "Points"]),
+        format_func=display_label,
+        key="progress_metric",
+    )
+    if progress_metric and progress_metric in player_games.columns:
+        player_games["Кумулативно"] = player_games[progress_metric].cumsum()
+        fig_progress = go.Figure()
+        fig_progress.add_bar(
+            x=player_games["Game Label"],
+            y=player_games[progress_metric],
+            name="По термину",
+            marker_color="#2f7d59",
+        )
+        fig_progress.add_scatter(
+            x=player_games["Game Label"],
+            y=player_games["Кумулативно"],
+            name="Кумулативно",
+            mode="lines+markers",
+            line=dict(color="#fbbf24", width=2),
+            yaxis="y2",
+        )
+        fig_progress.update_layout(
+            height=380,
+            yaxis=dict(title=display_label(progress_metric)),
+            yaxis2=dict(title="Кумулативно", overlaying="y", side="right"),
+            legend=dict(orientation="h", y=1.1),
+            margin=dict(l=8, r=8, t=48, b=24),
+            xaxis_title="",
+        )
+        st.plotly_chart(fig_progress, use_container_width=True)
+
+    st.divider()
+
+    # ── Учинак по термину ─────────────────────────────────────────────────────
     st.subheader("Учинак по термину")
     match_cols = existing_columns(
         df,
@@ -1683,7 +1822,6 @@ elif page == "Профил играча":
             "Unsuccessful passes",
             "Pass Accuracy",
             "Successful dribbles",
-            "Unsuccessful dribbles",
             "Dribble Accuracy",
             "Tackles Won",
             "Interceptions",
@@ -1691,21 +1829,20 @@ elif page == "Профил играча":
             "Goals Conceded",
         ],
     )
-    player_matches = df[df[PLAYER_COL] == player].sort_values("Game Sort")
-    show_table(player_matches[match_cols])
+    show_table(player_games[match_cols])
 
+    st.divider()
 
-elif page == "Поређење играча":
-    st.title("Поређење играча")
-
-    default_players = list(filtered_players[PLAYER_COL].head(2))
+    # ── Поређење играча ───────────────────────────────────────────────────────
+    st.subheader("Поређење играча")
+    default_compare = list(filtered_players[PLAYER_COL].head(2))
     selected_players = st.multiselect(
-        "Изабери 2 до 4 играча",
+        "Изабери 2 до 4 играча за поређење",
         sorted(filtered_players[PLAYER_COL].unique()),
-        default=default_players,
+        default=default_compare,
         max_selections=4,
+        key="compare_multi",
     )
-
     compare_metric_options = existing_columns(filtered_players, list(LEADERBOARD_OPTIONS.values()))
     compare_metrics = st.multiselect(
         "Статистике за поређење",
@@ -1716,18 +1853,15 @@ elif page == "Поређење играча":
                 "Goal Contributions per 60",
                 "Goals per 60",
                 "Assists per 60",
-                "Big Chances Created per 60",
+                "Interceptions per 60",
                 "Total Passes per 60",
                 "Successful passes per 60",
-                "Interceptions per 60",
             ],
         ),
         format_func=display_label,
+        key="compare_metrics",
     )
-
-    if len(selected_players) < 2 or not compare_metrics:
-        st.info("Изабери бар два играча и бар једну статистику.")
-    else:
+    if len(selected_players) >= 2 and compare_metrics:
         st.plotly_chart(
             comparison_chart(filtered_players, selected_players, compare_metrics),
             use_container_width=True,
@@ -1736,360 +1870,73 @@ elif page == "Поређење играча":
         show_table(
             filtered_players[filtered_players[PLAYER_COL].isin(selected_players)][table_cols],
         )
-
-
-elif page == "Листе":
-    st.title("Листе и рангирања")
-
-    available_options = {
-        label: metric
-        for label, metric in LEADERBOARD_OPTIONS.items()
-        if metric in filtered_players.columns
-    }
-    selected_label = st.selectbox("Статистика", list(available_options.keys()))
-    selected_metric = available_options[selected_label]
-    top_limit = min(30, len(filtered_players))
-    top_min = min(5, top_limit)
-    top_n = st.slider("Број играча", top_min, top_limit, min(10, top_limit))
-
-    st.plotly_chart(
-        make_top_bar(filtered_players, selected_metric, selected_label, top_n=top_n),
-        use_container_width=True,
-    )
-
-    ranking_cols = existing_columns(
-        filtered_players,
-        [
-            PLAYER_COL,
-            "Games Played",
-            MINUTES_COL,
-            selected_metric,
-            "Goal Contributions per 60",
-            "Goals per 60",
-            "Assists per 60",
-            "Total Passes per 60",
-            "Successful passes per 60",
-            "Interceptions per 60",
-            "Points per Game",
-            "Goals",
-            "Assists",
-        ],
-    )
-    show_table(
-        filtered_players[ranking_cols].sort_values(selected_metric, ascending=False),
-    )
-
-
-elif page == "Голови":
-    st.title("Голови")
-
-    if goals_df.empty:
-        st.info(
-            "Фајл са головима није пронађен. Локално се тражи "
-            "`C:\\Users\\beoog\\Desktop\\Fudbal Bezanija\\Sajt\\Fudbal Bezanija Golovi.xlsx`, "
-            "или `Fudbal Bezanija Golovi.xlsx` у истом фолдеру као апликација."
-        )
     else:
-        assisted_goals = 0
-        if "Assist" in goals_df.columns:
-            assisted_goals = goals_df["Assist"].fillna("").astype(str).str.strip().ne("").sum()
-
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Голова", format_number(len(goals_df)))
-        c2.metric("Термина", format_number(goals_df["Game Label"].nunique()))
-        c3.metric("Стрелаца", format_number(goals_df["Goalscorer"].nunique()))
-        c4.metric("Голова са асистенцијом", format_number(assisted_goals))
-
-        tab_scorers, tab_minutes, tab_player_minutes, tab_assists, tab_goalkeepers, tab_games = st.tabs(
-            ["Стрелци", "Минути", "Играч/минути", "Асистенције", "Голмани", "По термину"]
-        )
-
-        with tab_scorers:
-            scorer_counts = count_by_column(goals_df, "Goalscorer", "Голови")
-            if scorer_counts.empty:
-                st.info("Нема података о стрелцима.")
-            else:
-                st.plotly_chart(
-                    goal_count_bar(
-                        scorer_counts,
-                        "Goalscorer",
-                        "Голови",
-                        "Листа стрелаца из фајла голова",
-                        "#2f7d59",
-                    ),
-                    use_container_width=True,
-                )
-                show_table(scorer_counts)
-
-            if "Goal Method" in goals_df.columns:
-                scored_with = count_by_column(goals_df, "Goal Method", "Голови")
-                if not scored_with.empty:
-                    fig = px.pie(
-                        scored_with,
-                        names="Goal Method",
-                        values="Голови",
-                        title="Како су постизани голови",
-                        hole=0.35,
-                        labels=display_labels(["Goal Method", "Голови"]),
-                        color_discrete_sequence=px.colors.qualitative.Set2,
-                    )
-                    st.plotly_chart(fig, use_container_width=True)
-
-        with tab_minutes:
-            minute_goals = goals_with_minutes(goals_df)
-            if minute_goals.empty:
-                st.info("Нема употребљивих минута у фајлу са головима.")
-            else:
-                bin_size = st.select_slider(
-                    "Ширина интервала за хистограм",
-                    options=[1, 2, 5, 10],
-                    value=1,
-                    key="goal_hist_bin_size",
-                )
-                c1, c2 = st.columns([1.25, 0.75])
-                with c1:
-                    st.plotly_chart(
-                        minute_histogram_figure(minute_goals, bin_size),
-                        use_container_width=True,
-                    )
-                with c2:
-                    donut_fig, interval_counts = interval_donut_figure(minute_goals, 10)
-                    st.plotly_chart(donut_fig, use_container_width=True)
-                    show_table(interval_counts)
-
-        with tab_player_minutes:
-            minute_goals = goals_with_minutes(goals_df)
-            if minute_goals.empty:
-                st.info("Нема употребљивих минута у фајлу са головима.")
-            else:
-                c1, c2 = st.columns(2)
-                min_goal_options = list(range(1, max(2, int(minute_goals["Goalscorer"].value_counts().max())) + 1))
-                min_player_goals = c1.select_slider(
-                    "Минимум голова за топлотну мапу",
-                    options=min_goal_options,
-                    value=4 if 4 in min_goal_options else min_goal_options[0],
-                    key="player_minute_min_goals",
-                )
-                player_bin_size = c2.select_slider(
-                    "Интервал минута",
-                    options=[5, 10, 15],
-                    value=5,
-                    key="player_minute_bin_size",
-                )
-                fig, heatmap_table = player_minute_heatmap_figure(
-                    minute_goals,
-                    min_player_goals,
-                    player_bin_size,
-                )
-                if fig.data:
-                    st.plotly_chart(fig, use_container_width=True)
-                    with st.expander("Табела података за топлотну мапу"):
-                        show_table(heatmap_table)
-                else:
-                    st.info("Нема играча који пролазе задати минимум голова.")
-
-                st.subheader("Профил стрелаца по минутима")
-                timing_summary = player_timing_summary(minute_goals)
-                if timing_summary.empty:
-                    st.info("Нема довољно података за профил по минутима.")
-                else:
-                    show_table(timing_summary)
-
-        with tab_assists:
-            assist_counts = count_by_column(goals_df, "Assist", "Асистенције")
-            if assist_counts.empty:
-                st.info("Нема уписаних асистенција у фајлу са головима.")
-            else:
-                st.plotly_chart(
-                    goal_count_bar(
-                        assist_counts,
-                        "Assist",
-                        "Асистенције",
-                        "Асистенти из фајла голова",
-                        "#536dfe",
-                    ),
-                    use_container_width=True,
-                )
-                show_table(assist_counts)
-
-                pairs = assist_scorer_pairs(goals_df)
-                if not pairs.empty:
-                    if len(pairs) <= 5:
-                        top_pairs = len(pairs)
-                    else:
-                        top_pairs = st.slider(
-                            "Број комбинација асистент-стрелац",
-                            5,
-                            min(30, len(pairs)),
-                            min(12, len(pairs)),
-                            key="assist_pair_top_n",
-                        )
-                    st.plotly_chart(
-                        assist_scorer_bar_figure(pairs, top_pairs),
-                        use_container_width=True,
-                    )
-                    st.plotly_chart(
-                        assist_scorer_sankey_figure(pairs, top_pairs),
-                        use_container_width=True,
-                    )
-                    show_table(pairs.head(top_pairs))
-
-        with tab_goalkeepers:
-            goalkeeper_counts = count_by_column(goals_df, "Goalkeeper", "Примљени голови")
-            if goalkeeper_counts.empty:
-                st.info("Нема података о голманима.")
-            else:
-                st.plotly_chart(
-                    goal_count_bar(
-                        goalkeeper_counts,
-                        "Goalkeeper",
-                        "Примљени голови",
-                        "Примљени голови по голману",
-                        "#d95f02",
-                    ),
-                    use_container_width=True,
-                )
-                show_table(goalkeeper_counts)
-
-                minute_goals = goals_with_minutes(goals_df)
-                if not minute_goals.empty:
-                    c1, c2 = st.columns(2)
-                    max_conceded = int(goalkeeper_counts["Примљени голови"].max())
-                    min_conceded = c1.slider(
-                        "Минимум примљених голова за топлотну мапу",
-                        1,
-                        max(1, max_conceded),
-                        min(8, max(1, max_conceded)),
-                        key="goalkeeper_min_conceded",
-                    )
-                    gk_bin_size = c2.select_slider(
-                        "Интервал минута",
-                        options=[5, 10, 15],
-                        value=10,
-                        key="goalkeeper_bin_size",
-                    )
-                    fig, gk_heatmap = goalkeeper_minute_heatmap_figure(
-                        minute_goals,
-                        min_conceded,
-                        gk_bin_size,
-                    )
-                    if fig.data:
-                        st.plotly_chart(fig, use_container_width=True)
-                        with st.expander("Табела голманске топлотне мапе"):
-                            show_table(gk_heatmap)
-
-        with tab_games:
-            game_options = (
-                goals_df[["Game Label", "Game Sort"]]
-                .drop_duplicates()
-                .sort_values("Game Sort")["Game Label"]
-                .tolist()
-            )
-            selected_game = st.selectbox("Изабери термин", game_options)
-            game_goals = goals_df[goals_df["Game Label"] == selected_game].sort_values(
-                "Minute" if "Minute" in goals_df.columns else "Game Sort"
-            )
-
-            if game_goals.empty:
-                st.info("Нема голова за изабрани термин.")
-            else:
-                st.plotly_chart(goal_timeline_figure(game_goals), use_container_width=True)
-                table_cols = existing_columns(
-                    game_goals,
-                    [
-                        "Minute",
-                        "Team",
-                        "Goalscorer",
-                        "Assist",
-                        "Goalkeeper",
-                        "Goal Method",
-                        "Black/Colored",
-                        "White/Bibs",
-                        "Goal Count",
-                    ],
-                )
-                show_table(game_goals[table_cols])
+        st.info("Изабери бар два играча и бар једну статистику.")
 
 
-elif page == "Анализа две осе":
-    st.title("Анализа две осе")
-
-    numeric_analysis_cols = [
-        column
-        for column in filtered_players.select_dtypes(include="number").columns
-        if column not in ["No."]
-    ]
-
-    default_x = (
-        "Successful passes per 60"
-        if "Successful passes per 60" in numeric_analysis_cols
-        else "Pass Accuracy"
-        if "Pass Accuracy" in numeric_analysis_cols
-        else numeric_analysis_cols[0]
-    )
-    default_y = (
-        "Big Chances Created per 60"
-        if "Big Chances Created per 60" in numeric_analysis_cols
-        else numeric_analysis_cols[min(1, len(numeric_analysis_cols) - 1)]
-    )
-    default_size = MINUTES_COL if MINUTES_COL in numeric_analysis_cols else "Games Played"
-
-    c1, c2, c3 = st.columns(3)
-    x_metric = c1.selectbox(
-        "Водоравна оса",
-        numeric_analysis_cols,
-        index=numeric_analysis_cols.index(default_x),
-        format_func=display_label,
-    )
-    y_metric = c2.selectbox(
-        "Усправна оса",
-        numeric_analysis_cols,
-        index=numeric_analysis_cols.index(default_y),
-        format_func=display_label,
-    )
-    size_metric = c3.selectbox(
-        "Величина тачке",
-        numeric_analysis_cols,
-        index=numeric_analysis_cols.index(default_size),
-        format_func=display_label,
-    )
-
-    st.plotly_chart(
-        quadrant_chart(
-            filtered_players,
-            x_metric,
-            y_metric,
-            size_metric,
-            f"{display_label(x_metric)} и {display_label(y_metric)}",
-        ),
-        use_container_width=True,
-    )
-
-
-elif page == "Синергија":
-    st.title("Синергија и дуели")
+# ═══════════════════════════════════════════════════════════════════════════════
+# 🤝 ХЕМИЈА
+# ═══════════════════════════════════════════════════════════════════════════════
+elif page == "🤝 Хемија":
+    st.title("Хемија и синергија")
 
     required = {GAME_COL, TEAM_COL, PLAYER_COL, POINTS_COL}
     missing = sorted(required.difference(df.columns))
     if missing:
-        st.info("За ову анализу недостају колоне: " + ", ".join(display_label(column) for column in missing))
+        st.info("За ову анализу недостају колоне: " + ", ".join(display_label(c) for c in missing))
     else:
         min_pair_games = st.slider("Минимум заједничких термина", 1, 10, 3)
-        tab_same, tab_opp = st.tabs(["Иста екипа", "Играч против играча"])
+
+        # Хемија анализа - исти тим
+        same_heatmap = build_same_team_heatmap(df, min_pair_games)
+
+        # Рачунај парове за топ/флоп
+        st.subheader("Најбољи и најгори парови")
+        if not same_heatmap.empty:
+            pair_rows = []
+            for p1 in same_heatmap.index:
+                for p2 in same_heatmap.columns:
+                    val = same_heatmap.loc[p1, p2]
+                    if pd.notna(val) and p1 < p2:
+                        pair_rows.append({"Пар": f"{p1} + {p2}", "Победе %": round(val, 1)})
+            pairs_df = pd.DataFrame(pair_rows).sort_values("Победе %", ascending=False)
+
+            if not pairs_df.empty:
+                col_best, col_worst = st.columns(2)
+                with col_best:
+                    st.markdown("**🟢 Најбољи парови**")
+                    show_table(pairs_df.head(5).reset_index(drop=True))
+                with col_worst:
+                    st.markdown("**🔴 Најгори парови**")
+                    show_table(pairs_df.tail(5).sort_values("Победе %").reset_index(drop=True))
+
+        st.divider()
+
+        tab_same, tab_opp = st.tabs(["Мрежа хемије (исти тим)", "Играч против играча"])
 
         with tab_same:
-            same_heatmap = build_same_team_heatmap(df, min_pair_games)
             if same_heatmap.empty:
                 st.info("Нема парова који пролазе задати минимум.")
             else:
-                st.plotly_chart(
-                    heatmap_figure(
-                        same_heatmap,
-                        "Проценат победа када играчи играју заједно",
-                        "RdYlGn",
-                    ),
-                    use_container_width=True,
+                fig_h = px.imshow(
+                    same_heatmap,
+                    text_auto=".0f",
+                    color_continuous_scale="RdYlGn",
+                    zmin=0,
+                    zmax=100,
+                    aspect="auto",
+                    labels=dict(color="Победе %"),
+                    title="Проценат победа када играчи играју заједно",
                 )
+                fig_h.update_traces(
+                    hovertemplate="<b>%{y}</b> + <b>%{x}</b><br>Заједно одиграних термина: %{customdata}<extra></extra>",
+                )
+                fig_h.update_layout(
+                    height=max(520, 28 * len(same_heatmap.index) + 160),
+                    xaxis_title="", yaxis_title="",
+                    margin=dict(l=8, r=8, t=56, b=24),
+                )
+                st.plotly_chart(fig_h, use_container_width=True)
 
         with tab_opp:
             opp_heatmap = build_opponent_heatmap(df, min_pair_games)
@@ -2097,39 +1944,200 @@ elif page == "Синергија":
                 st.info("Нема дуела који пролазе задати минимум.")
             else:
                 st.plotly_chart(
-                    heatmap_figure(
-                        opp_heatmap,
-                        "Проценат победа играча против конкретног противника",
-                        "RdBu",
-                    ),
+                    heatmap_figure(opp_heatmap, "Проценат победа играча против конкретног противника", "RdBu"),
                     use_container_width=True,
                 )
 
 
-elif page == "Рекорди":
-    st.title("Рекорди на једном термину")
+# ═══════════════════════════════════════════════════════════════════════════════
+# 📈 ТРЕНДОВИ
+# ═══════════════════════════════════════════════════════════════════════════════
+elif page == "📈 Трендови":
+    st.title("Трендови сезоне")
 
+    # ── Форма последњих 5 термина ────────────────────────────────────────────
+    st.subheader("Форма екипе по терминима")
+    game_labels_sorted = (
+        df[["Game Label", "Game Sort"]]
+        .drop_duplicates()
+        .sort_values("Game Sort")["Game Label"]
+        .tolist()
+    )
+    n_games = st.slider("Број термина за приказ", 3, len(game_labels_sorted), min(10, len(game_labels_sorted)))
+    last_n = game_labels_sorted[-n_games:]
+
+    trend_metric = st.selectbox(
+        "Метрика форме",
+        existing_columns(player_stats, ["Goal Contributions per 60", "Goals per 60", "Interceptions per 60", "Pass Accuracy", "Points per Game"]),
+        format_func=display_label,
+        key="trend_metric",
+    )
+
+    form_rows = []
+    for gl in last_n:
+        g_df = df[df["Game Label"] == gl]
+        g_stats = build_player_stats(g_df)
+        if trend_metric and trend_metric in g_stats.columns:
+            val = g_stats[trend_metric].mean()
+            form_rows.append({"Термин": gl, "Вредност": round(val, 2)})
+        else:
+            form_rows.append({"Термин": gl, "Вредност": None})
+
+    if form_rows:
+        form_trend_df = pd.DataFrame(form_rows).dropna()
+        if not form_trend_df.empty:
+            fig_trend = px.line(
+                form_trend_df,
+                x="Термин",
+                y="Вредност",
+                markers=True,
+                title=f"Просек: {display_label(trend_metric) if trend_metric else ''}",
+                text="Вредност",
+            )
+            fig_trend.update_traces(line_color="#2f7d59", textposition="top center", marker=dict(size=8))
+            fig_trend.update_layout(
+                height=380, xaxis_title="", margin=dict(l=8, r=8, t=48, b=24),
+                yaxis_title=display_label(trend_metric) if trend_metric else "",
+            )
+            st.plotly_chart(fig_trend, use_container_width=True)
+
+    st.divider()
+
+    # ── Голови по месецима ────────────────────────────────────────────────────
+    if not goals_df.empty and "Game Sort" in goals_df.columns:
+        st.subheader("Голови по месецима")
+        goals_monthly = goals_df.copy()
+        goals_monthly["Месец"] = goals_monthly["Game Sort"].dt.to_period("M").astype(str)
+        monthly_counts = goals_monthly.groupby("Месец").size().reset_index(name="Голови")
+        fig_monthly = px.bar(
+            monthly_counts,
+            x="Месец",
+            y="Голови",
+            color_discrete_sequence=["#2f7d59"],
+            title="Голови по месецима",
+            text="Голови",
+        )
+        fig_monthly.update_layout(height=350, xaxis_title="", margin=dict(l=8, r=8, t=48, b=24))
+        st.plotly_chart(fig_monthly, use_container_width=True)
+
+        st.divider()
+
+    # ── Анализа две осе ───────────────────────────────────────────────────────
+    st.subheader("Анализа две осе")
+    numeric_analysis_cols = [
+        c for c in filtered_players.select_dtypes(include="number").columns
+        if c not in ["No."]
+    ]
+    if len(numeric_analysis_cols) >= 2:
+        default_x = next((m for m in ["Successful passes per 60", "Pass Accuracy"] if m in numeric_analysis_cols), numeric_analysis_cols[0])
+        default_y = next((m for m in ["Big Chances Created per 60", "Goals per 60"] if m in numeric_analysis_cols), numeric_analysis_cols[1])
+        default_size = MINUTES_COL if MINUTES_COL in numeric_analysis_cols else "Games Played"
+
+        ca1, ca2, ca3 = st.columns(3)
+        x_metric = ca1.selectbox("Водоравна оса", numeric_analysis_cols, index=numeric_analysis_cols.index(default_x), format_func=display_label)
+        y_metric = ca2.selectbox("Усправна оса", numeric_analysis_cols, index=numeric_analysis_cols.index(default_y), format_func=display_label)
+        size_metric = ca3.selectbox("Величина тачке", numeric_analysis_cols, index=numeric_analysis_cols.index(default_size), format_func=display_label)
+
+        st.plotly_chart(
+            quadrant_chart(filtered_players, x_metric, y_metric, size_metric, f"{display_label(x_metric)} и {display_label(y_metric)}"),
+            use_container_width=True,
+        )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 🥇 НАГРАДЕ
+# ═══════════════════════════════════════════════════════════════════════════════
+elif page == "🥇 Награде":
+    st.title("Награде сезоне")
+    st.caption("Признања за истакнуте играче сезоне.")
+
+    def award_card(emoji: str, title: str, player_name: str, value: str, desc: str) -> None:
+        st.markdown(
+            f"""
+            <div style='background:rgba(47,125,89,0.12);border:1px solid rgba(47,125,89,0.3);
+                        border-radius:12px;padding:1.2rem 1.4rem;margin-bottom:0.8rem;'>
+                <div style='font-size:2rem;margin-bottom:0.3rem'>{emoji}</div>
+                <div style='font-size:0.75rem;text-transform:uppercase;letter-spacing:0.08em;color:#6b7280;margin-bottom:0.2rem'>{title}</div>
+                <div style='font-size:1.5rem;font-weight:700;margin-bottom:0.1rem'>{player_name}</div>
+                <div style='font-size:1.1rem;color:#2f7d59;font-weight:600;margin-bottom:0.2rem'>{value}</div>
+                <div style='font-size:0.8rem;color:#9ca3af'>{desc}</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        # Golden Boot - највише голова на 60 мин
+        if "Goals per 60" in filtered_players.columns:
+            gb_row = filtered_players.sort_values("Goals per 60", ascending=False).iloc[0]
+            award_card(
+                "⚽", "Golden Boot — Топ стрелац",
+                gb_row[PLAYER_COL],
+                f"{format_number(gb_row['Goals per 60'], 2)} гол./60 мин",
+                f"Укупно голова: {format_number(gb_row.get('Goals', 0))}",
+            )
+
+        # Iron Man - највише минута
+        if MINUTES_COL in filtered_players.columns:
+            im_row = player_stats.sort_values(MINUTES_COL, ascending=False).iloc[0]
+            award_card(
+                "💪", "Iron Man — Највише минута",
+                im_row[PLAYER_COL],
+                f"{format_number(im_row[MINUTES_COL])} мин",
+                f"У {format_number(im_row['Games Played'])} термина",
+            )
+
+        # Clutch Player - највише бодова по термину
+        if "Points per Game" in filtered_players.columns:
+            cp_row = filtered_players.sort_values("Points per Game", ascending=False).iloc[0]
+            award_card(
+                "🔥", "Clutch Player — Кључни играч",
+                cp_row[PLAYER_COL],
+                f"{format_number(cp_row['Points per Game'], 2)} бода/термин",
+                "Највиши просечан учинак",
+            )
+
+    with col2:
+        # Playmaker - највише асистенција
+        if "Assists per 60" in filtered_players.columns:
+            pm_row = filtered_players.sort_values("Assists per 60", ascending=False).iloc[0]
+            award_card(
+                "🎯", "Playmaker — Пласирач игре",
+                pm_row[PLAYER_COL],
+                f"{format_number(pm_row['Assists per 60'], 2)} асист./60 мин",
+                f"Укупно асистенција: {format_number(pm_row.get('Assists', 0))}",
+            )
+
+        # Clean Sheet / Дефанзивац - највише пресечених лопти
+        if "Interceptions per 60" in filtered_players.columns:
+            cs_row = filtered_players.sort_values("Interceptions per 60", ascending=False).iloc[0]
+            award_card(
+                "🛡️", "Clean Sheet — Најбољи дефанзивац",
+                cs_row[PLAYER_COL],
+                f"{format_number(cs_row['Interceptions per 60'], 2)} прес./60 мин",
+                "Највише пресечених лопти на 60 мин",
+            )
+
+        # Пасер - највише успешних додавања
+        if "Successful passes per 60" in filtered_players.columns:
+            pa_row = filtered_players.sort_values("Successful passes per 60", ascending=False).iloc[0]
+            award_card(
+                "🔗", "Пасер — Мајстор додавања",
+                pa_row[PLAYER_COL],
+                f"{format_number(pa_row['Successful passes per 60'], 2)} додав./60 мин",
+                f"Прецизност паса: {format_number(pa_row.get('Pass Accuracy', 0), 1)}%",
+            )
+
+    st.divider()
+    st.subheader("🏆 Рекорди на једном термину")
     record_stats = st.multiselect(
         "Статистике",
         existing_columns(df, CORE_STATS + [POINTS_COL]),
-        default=existing_columns(
-            df,
-            [
-                "Goals",
-                "Assists",
-                "Big Chances Created",
-                "Total Shots",
-                "Saves",
-                "Blocks",
-                "Successful passes",
-                "Successful dribbles",
-                "Tackles Won",
-                "Interceptions",
-            ],
-        ),
+        default=existing_columns(df, ["Goals", "Assists", "Big Chances Created", "Saves", "Blocks", "Successful passes", "Interceptions"]),
         format_func=display_label,
     )
-
     records = single_game_records(df, record_stats)
     if records.empty:
         st.info("Нема доступних рекорда за изабране статистике.")
@@ -2137,21 +2145,101 @@ elif page == "Рекорди":
         show_table(records)
 
 
-elif page == "Подаци":
-    st.title("Подаци")
-    tab_raw, tab_players, tab_goals = st.tabs(["Сви редови", "Агрегирано по играчу", "Голови"])
+# ═══════════════════════════════════════════════════════════════════════════════
+# 📊 ИСТОРИЈА ТЕРМИНА
+# ═══════════════════════════════════════════════════════════════════════════════
+elif page == "📊 Историја термина":
+    st.title("Историја термина")
 
-    with tab_raw:
-        show_table(df, max_rows=500)
-        download_table_button(df, "Преузми све редове као CSV", "fk_baranda_svi_redovi.csv")
+    game_labels_all = (
+        df[["Game Label", "Game Sort"]]
+        .drop_duplicates()
+        .sort_values("Game Sort", ascending=False)["Game Label"]
+        .tolist()
+    )
 
-    with tab_players:
-        show_table(player_stats, max_rows=500)
-        download_table_button(player_stats, "Преузми табелу играча као CSV", "fk_baranda_igraci.csv")
+    selected_game = st.selectbox("Изабери термин", game_labels_all)
+    game_df = df[df["Game Label"] == selected_game].copy()
 
-    with tab_goals:
-        if goals_df.empty:
-            st.info("Фајл са головима није учитан.")
-        else:
-            show_table(goals_df, max_rows=500)
-            download_table_button(goals_df, "Преузми голове као CSV", "fk_baranda_golovi.csv")
+    # ── Резултат ─────────────────────────────────────────────────────────────
+    if TEAM_COL in game_df.columns and POINTS_COL in game_df.columns:
+        teams_info = game_df[[TEAM_COL, POINTS_COL]].drop_duplicates(TEAM_COL)
+        if "Goals" in game_df.columns:
+            tg = game_df.groupby(TEAM_COL)["Goals"].sum().reset_index()
+            teams_info = teams_info.merge(tg, on=TEAM_COL, how="left")
+        if len(teams_info) == 2:
+            t1, t2 = teams_info.iloc[0], teams_info.iloc[1]
+            s1 = int(t1.get("Goals", 0)) if "Goals" in t1.index else "?"
+            s2 = int(t2.get("Goals", 0)) if "Goals" in t2.index else "?"
+            ca, cb, cc = st.columns([2, 1, 2])
+            ca.metric(str(t1[TEAM_COL]), s1)
+            cb.markdown("<h2 style='text-align:center;margin-top:1rem'>:</h2>", unsafe_allow_html=True)
+            cc.metric(str(t2[TEAM_COL]), s2)
+
+    st.divider()
+
+    # ── Статистика термина ────────────────────────────────────────────────────
+    st.subheader("Статистика термина")
+    match_cols = existing_columns(
+        game_df,
+        [
+            PLAYER_COL,
+            TEAM_COL,
+            POINTS_COL,
+            MINUTES_COL,
+            "Goals",
+            "Assists",
+            "Big Chances Created",
+            "Shots on Goal",
+            "Successful passes",
+            "Unsuccessful passes",
+            "Pass Accuracy",
+            "Successful dribbles",
+            "Dribble Accuracy",
+            "Tackles Won",
+            "Interceptions",
+            "Saves",
+            "Goals Conceded",
+        ],
+    )
+    show_table(game_df[match_cols].sort_values(TEAM_COL if TEAM_COL in match_cols else PLAYER_COL))
+
+    # ── Голови у термину ─────────────────────────────────────────────────────
+    if not goals_df.empty:
+        game_goals = goals_df[goals_df["Game Label"] == selected_game].sort_values(
+            "Minute" if "Minute" in goals_df.columns else "Game Sort"
+        )
+        if not game_goals.empty:
+            st.divider()
+            st.subheader("Голови у термину")
+            st.plotly_chart(goal_timeline_figure(game_goals), use_container_width=True)
+            goal_table_cols = existing_columns(
+                game_goals,
+                ["Minute", "Team", "Goalscorer", "Assist", "Goalkeeper", "Goal Method", "Black/Colored", "White/Bibs", "Goal Count"],
+            )
+            show_table(game_goals[goal_table_cols])
+
+    st.divider()
+
+    # ── Целокупна историја ────────────────────────────────────────────────────
+    st.subheader("Сви термини — преглед")
+    all_games_summary = []
+    for gl in reversed(game_labels_all):
+        g_df = df[df["Game Label"] == gl]
+        row_d = {"Термин": gl}
+        if TEAM_COL in g_df.columns and "Goals" in g_df.columns:
+            tg = g_df.groupby(TEAM_COL)["Goals"].sum()
+            teams_in_game = list(tg.index)
+            if len(teams_in_game) == 2:
+                row_d["Екипа 1"] = teams_in_game[0]
+                row_d["Голови 1"] = int(tg.iloc[0])
+                row_d["Екипа 2"] = teams_in_game[1]
+                row_d["Голови 2"] = int(tg.iloc[1])
+        row_d["Играча"] = g_df[PLAYER_COL].nunique()
+        if "Goals" in g_df.columns:
+            row_d["Укупно голова"] = int(g_df["Goals"].sum())
+        all_games_summary.append(row_d)
+
+    if all_games_summary:
+        summary_df = pd.DataFrame(all_games_summary)
+        show_table(summary_df)
