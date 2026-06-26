@@ -2141,17 +2141,17 @@ if page == "🏆 Почетна":
     st.divider()
 
     # ── Топ листе ─────────────────────────────────────────────────────────────
-    st.subheader("Ко је носио игру")
+    st.subheader("Истакнути појединци")
     c1, c2 = st.columns(2)
-    if "Goal Contributions per 60" in filtered_players.columns:
+    if "Points per Game" in filtered_players.columns:
         c1.plotly_chart(
-            make_top_bar(filtered_players, "Goal Contributions per 60", "Голови + асистенције на 60 минута"),
+            make_top_bar(filtered_players, "Points per Game", "Просечан број освојених бодова", color="#536dfe"),
             use_container_width=True,
             config=PLOTLY_CONFIG,
         )
-    if "Interceptions per 60" in filtered_players.columns:
+    if "Goal Contributions per 60" in filtered_players.columns:
         c2.plotly_chart(
-            make_top_bar(filtered_players, "Interceptions per 60", "Пресечене лопте на 60 минута", color="#536dfe"),
+            make_top_bar(filtered_players, "Goal Contributions per 60", "Голови + асистенције на 60 минута"),
             use_container_width=True,
             config=PLOTLY_CONFIG,
         )
