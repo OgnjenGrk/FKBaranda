@@ -1103,11 +1103,10 @@ def quadrant_chart(
     size_metric: str,
     title: str,
 ) -> go.Figure:
-    # Изабери само потребне колоне, избегни дупликате
-    cols_needed = list(dict.fromkeys([PLAYER_COL, x_metric, y_metric, size_metric, "Games Played"]))
-    plot_df = data[cols_needed].dropna()
+    plot_df = data[[PLAYER_COL, x_metric, y_metric, size_metric, "Games Played"]].dropna()
+    x_mean = plot_df[x_metric].mean()
+    y_mean = plot_df[y_metric].mean()
 
-    # Боја увек по броју термина (Games Played) без обзира на Величину тачке
     fig = px.scatter(
         plot_df,
         x=x_metric,
@@ -1117,13 +1116,10 @@ def quadrant_chart(
         text=PLAYER_COL,
         color="Games Played",
         color_continuous_scale="Viridis",
-        range_color=[plot_df["Games Played"].min(), plot_df["Games Played"].max()],
         title=title,
-        labels=display_labels(cols_needed),
+        labels=display_labels([PLAYER_COL, x_metric, y_metric, size_metric, "Games Played"]),
     )
     fig.update_traces(textposition="top center", marker=dict(opacity=0.78, line=dict(width=1)))
-    x_mean = plot_df[x_metric].mean()
-    y_mean = plot_df[y_metric].mean()
     fig.add_vline(x=x_mean, line_dash="dash", line_color="gray")
     fig.add_hline(y=y_mean, line_dash="dash", line_color="gray")
     fig.add_annotation(
@@ -1157,23 +1153,13 @@ def single_game_records(df: pd.DataFrame, stats: list[str]) -> pd.DataFrame:
         if pd.isna(max_value):
             continue
 
-        record_rows = df[df[stat] == max_value].copy()
-        # Сортирај по датуму термина да би се узео ПРВИ термин за свако постигнуће
-        if "Game Sort" in record_rows.columns:
-            record_rows = record_rows.sort_values("Game Sort")
-
-        seen_players: set[str] = set()
+        record_rows = df[df[stat] == max_value]
         for _, row in record_rows.iterrows():
-            player = row[PLAYER_COL]
-            if player in seen_players:
-                # Исти играч — прескочи (прикажи само прво постигнуће)
-                continue
-            seen_players.add(player)
             rows.append(
                 {
                     "Статистика": display_label(stat),
-                    "Играч": player,
-                    "Вредност": int(round(max_value)),
+                    "Играч": row[PLAYER_COL],
+                    "Вредност": max_value,
                     "Термин": row.get("Game Label", ""),
                     "Екипа": row.get(TEAM_COL, ""),
                 }
@@ -2044,8 +2030,8 @@ if filtered_players.empty:
 # 🏆 ПОЧЕТНА
 # ═══════════════════════════════════════════════════════════════════════════════
 if page == "🏆 Почетна":
-    render_page_title("ФК Баранда — сезона 2025/26")
-    st.caption("Статистички преглед сезоне.")
+    render_page_title("ФК Баранда (Бежанија)")
+    st.caption("Преглед сезоне и најважније статистике нашег термина.")
 
     # ── Метрике ──────────────────────────────────────────────────────────────
     metric_card_grid(player_stats, df)
@@ -2550,68 +2536,28 @@ elif page == "📈 Трендови":
         g_stats = build_player_stats(g_df)
         if trend_metric and trend_metric in g_stats.columns:
             val = g_stats[trend_metric].mean()
+            form_rows.append({"Термин": gl, "Вредност": round(val, 2)})
         else:
-            val = None
-        # Одреди формат термина (5на5 или 6на6) из колоне Players ако постоји
-        format_val = None
-        if "Players" in g_df.columns:
-            p_vals = g_df["Players"].dropna()
-            if not p_vals.empty:
-                try:
-                    format_val = int(p_vals.iloc[0])
-                except (ValueError, TypeError):
-                    format_val = None
-        form_rows.append({"Термин": gl, "Вредност": round(val, 2) if val is not None else None, "Формат": format_val})
+            form_rows.append({"Термин": gl, "Вредност": None})
 
     if form_rows:
-        form_trend_df = pd.DataFrame(form_rows).dropna(subset=["Вредност"])
+        form_trend_df = pd.DataFrame(form_rows).dropna()
         if not form_trend_df.empty:
-            # Одреди боје кружића
-            has_format = "Формат" in form_trend_df.columns and form_trend_df["Формат"].notna().any()
-            if has_format:
-                marker_colors = form_trend_df["Формат"].map(
-                    lambda x: "#4ade80" if x == 10 else ("#facc15" if x == 12 else "#2f7d59")
-                ).tolist()
-            else:
-                marker_colors = "#2f7d59"
-
-            fig_trend = go.Figure()
-            fig_trend.add_trace(go.Scatter(
-                x=form_trend_df["Термин"],
-                y=form_trend_df["Вредност"],
-                mode="lines+markers+text",
-                text=form_trend_df["Вредност"].astype(str),
-                textposition="top center",
-                line=dict(color="#2f7d59", width=2),
-                marker=dict(
-                    size=10,
-                    color=marker_colors,
-                    line=dict(width=1, color="#0e1117"),
-                ),
-                name="",
-            ))
-            # Легенда ако постоје оба формата
-            if has_format and form_trend_df["Формат"].nunique() > 1:
-                for fmt, color, label in [(10, "#4ade80", "5 на 5"), (12, "#facc15", "6 на 6")]:
-                    if fmt in form_trend_df["Формат"].values:
-                        fig_trend.add_trace(go.Scatter(
-                            x=[None], y=[None],
-                            mode="markers",
-                            marker=dict(size=10, color=color),
-                            name=label,
-                            showlegend=True,
-                        ))
+            fig_trend = px.line(
+                form_trend_df,
+                x="Термин",
+                y="Вредност",
+                markers=True,
+                title=f"Просек: {display_label(trend_metric) if trend_metric else ''}",
+                text="Вредност",
+            )
+            fig_trend.update_traces(line_color="#2f7d59", textposition="top center", marker=dict(size=8))
             fig_trend.update_layout(
                 paper_bgcolor='#0e1117',
                 plot_bgcolor='#1a1d24',
                 font=dict(color='#e8eaed'),
-                title=f"Просек: {display_label(trend_metric) if trend_metric else ''}",
-                height=380,
-                xaxis_title="",
+                height=380, xaxis_title="", margin=dict(l=8, r=8, t=48, b=24),
                 yaxis_title=display_label(trend_metric) if trend_metric else "",
-                margin=dict(l=8, r=8, t=48, b=24),
-                showlegend=has_format and form_trend_df["Формат"].nunique() > 1,
-                legend=dict(orientation="h", y=1.1),
             )
             st.plotly_chart(fig_trend, use_container_width=True, config=PLOTLY_CONFIG)
 
@@ -2647,7 +2593,7 @@ elif page == "📈 Трендови":
         if c not in ["No."]
     ]
     if len(numeric_analysis_cols) >= 2:
-        default_x = next((m for m in ["Pass Accuracy", "Successful passes per 60"] if m in numeric_analysis_cols), numeric_analysis_cols[0])
+        default_x = next((m for m in ["Successful passes per 60", "Pass Accuracy"] if m in numeric_analysis_cols), numeric_analysis_cols[0])
         default_y = next((m for m in ["Big Chances Created per 60", "Goals per 60"] if m in numeric_analysis_cols), numeric_analysis_cols[1])
         default_size = MINUTES_COL if MINUTES_COL in numeric_analysis_cols else "Games Played"
 
@@ -2723,7 +2669,7 @@ elif page == "🥇 Награде":
         if "Assists per 60" in filtered_players.columns:
             pm_row = filtered_players.sort_values("Assists per 60", ascending=False).iloc[0]
             award_card(
-                "🎯", "Playmaker — Најбољи асистент",
+                "🎯", "Playmaker — Пласирач игре",
                 pm_row[PLAYER_COL],
                 f"{format_number(pm_row['Assists per 60'], 2)} асист./60 мин",
                 f"Укупно асистенција: {format_number(pm_row.get('Assists', 0))}",
@@ -2739,28 +2685,21 @@ elif page == "🥇 Награде":
                 "Највише пресечених лопти на 60 мин",
             )
 
-        # Passer - примарни критеријум: прецизност додавања; секундарни: успешна додавања/60
-        if "Pass Accuracy" in filtered_players.columns:
-            pa_candidates = filtered_players.copy()
-            pa_candidates["_pa_round"] = pa_candidates["Pass Accuracy"].round(1)
-            pa_candidates = pa_candidates.sort_values(
-                ["_pa_round", "Successful passes per 60"],
-                ascending=[False, False],
-            )
-            pa_row = pa_candidates.iloc[0]
-            succ_passes = format_number(pa_row.get("Successful passes per 60", 0), 2)
+        # Пасер - највише успешних додавања
+        if "Successful passes per 60" in filtered_players.columns:
+            pa_row = filtered_players.sort_values("Successful passes per 60", ascending=False).iloc[0]
             award_card(
-                "🔗", "Passer — Мајстор додавања",
+                "🔗", "Пасер — Мајстор додавања",
                 pa_row[PLAYER_COL],
-                f"Прецизност паса: {format_number(pa_row['Pass Accuracy'], 1)}%",
-                f"{succ_passes} додав./60 мин",
+                f"{format_number(pa_row['Successful passes per 60'], 2)} додав./60 мин",
+                f"Прецизност паса: {format_number(pa_row.get('Pass Accuracy', 0), 1)}%",
             )
 
     st.divider()
     st.subheader("🏆 Рекорди на једном термину")
     record_stats = st.multiselect(
         "Статистике",
-        existing_columns(df, CORE_STATS),
+        existing_columns(df, CORE_STATS + [POINTS_COL]),
         default=existing_columns(df, ["Goals", "Assists", "Big Chances Created", "Saves", "Blocks", "Successful passes", "Interceptions"]),
         format_func=display_label,
     )
